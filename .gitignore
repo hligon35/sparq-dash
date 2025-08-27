@@ -1,1 +1,6 @@
 server.log
+data/
+*.log
+node_modules/
+*.local
+*.env
