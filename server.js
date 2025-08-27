@@ -1336,11 +1336,20 @@ app.put('/api/billing', authenticateToken, (req, res) => {
 app.get('/api/sparqy/health', authenticateToken, (req,res)=> res.json({ ok:true, model:'stub', time: Date.now() }));
 const sparqyHistory = [];
 app.get('/api/sparqy/history', authenticateToken, (req,res)=> res.json({ messages: sparqyHistory.slice(-20) }));
-app.post('/api/sparqy/chat', authenticateToken, express.json(), (req,res)=>{
-    const { content } = req.body || {}; const userMsg = { role:'user', content: String(content||'').slice(0,2000), at: Date.now() };
-    sparqyHistory.push(userMsg);
-    const reply = { role:'assistant', content: 'This is a local dev stub. Your message was: ' + userMsg.content, at: Date.now(), sources: [] };
-    sparqyHistory.push(reply);
-    res.json(reply);
+app.post('/api/sparqy/chat', authenticateToken, (req,res)=>{
+    try {
+        const { content, message } = req.body || {};
+        const text = String((content ?? message) || '').slice(0, 2000);
+        if (!text) return res.status(400).json({ error: 'Message is required' });
+        const userMsg = { role:'user', content: text, at: Date.now() };
+        sparqyHistory.push(userMsg);
+        const replyText = 'This is a local dev stub. Your message was: ' + text;
+        const replyMsg = { role:'assistant', content: replyText, at: Date.now(), sources: [] };
+        sparqyHistory.push(replyMsg);
+        // Respond in the shape the UI expects
+        res.json({ reply: replyText, sources: [] });
+    } catch (e) {
+        res.status(500).json({ error: 'Assistant failed' });
+    }
 });
 app.post('/api/sparqy/clear', authenticateToken, (req,res)=>{ sparqyHistory.length = 0; res.json({ ok:true }); });

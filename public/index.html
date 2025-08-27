@@ -55,7 +55,7 @@
         .top-nav {
             display: flex;
             gap: 8px;
-            padding: 10px 18px;
+            padding: 14px 18px 14px 18px;
             background: #ffffff;
             border-bottom: 1px solid var(--light-gray);
             align-items: center;
@@ -76,7 +76,39 @@
             white-space: nowrap;
             scroll-snap-align: start;
             text-align: center; /* center label inside buttons */
+            border-radius: 999px; /* pill */
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            color: #333;
+            position: relative; /* for active dot */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            transition: color .2s, background .2s, border-color .2s, transform .15s;
         }
+        /* Inline indicator dot (replaces emoji icon) */
+        .top-nav .nav-item::before {
+            content: '';
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 999px;
+            background: #cbd5e1; /* neutral */
+            margin-right: 8px;
+            box-shadow: 0 0 0 2px #fff; /* subtle halo */
+        }
+        /* Override global hover/active styles for top nav to keep pill look */
+        .top-nav .nav-item:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            color: #111;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+        }
+        .top-nav .nav-item.active {
+            background: #eff6ff;
+            color: var(--primary-blue);
+            border-color: var(--primary-blue);
+            box-shadow: 0 2px 6px rgba(26,120,216,0.12);
+        }
+    .top-nav .nav-item.active::before { background: var(--primary-blue); box-shadow: 0 0 0 2px #eff6ff; }
     .main-content { display: flex; flex: 1; min-height: 0; }
     .content { flex: 1; padding: 24px; overflow: auto; min-width: 0; width: 100%; }
     /* Center inner sections and standardize field widths */
@@ -153,6 +185,30 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
+        /* But keep the top-nav pills using their own hover/active look */
+        .top-nav .nav-item:hover,
+        .top-nav .nav-item.active {
+            /* overrides above via specificity */
+            background: #eff6ff;
+            color: var(--primary-blue);
+            border-color: var(--primary-blue);
+            box-shadow: 0 2px 6px rgba(26,120,216,0.12);
+            transform: translateY(-1px);
+        }
+        /* Hide legacy header overlay user info injected by admin-dashboard.js */
+        .header .user-info { display: none !important; }
+        /* User info bar styles */
+        .userbar { 
+            display:flex; flex-direction:column; align-items:center; gap:6px; 
+            position: fixed; top: 10px; right: 14px; 
+            padding: 0; background: transparent; border: none; 
+            z-index: 1000;
+        }
+    .userbar .user-pill { display:inline-flex; align-items:center; gap:10px; padding:6px 12px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; color:#111; box-shadow:0 2px 8px rgba(0,0,0,.10); font-size: 14px; }
+    .userbar .online-dot { width:10px; height:10px; border-radius:999px; background:#f59e0b; box-shadow:0 0 0 2px #fff inset; }
+    .userbar .logout-link { background:transparent; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0; }
+    .userbar .logout-link:hover { text-decoration: underline; }
+    .userbar .user-time { font-size: 12px; color:#ffffff; text-align:center; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
         .section { display: none; }
         .section.active { display: block; }
         .card { 
@@ -169,7 +225,7 @@
             margin-bottom: 8px; 
             color: #333;
         }
-        .form-group input, .form-group select, .form-group textarea { 
+        .form-group input:not([type="checkbox"]):not([type="radio"]), .form-group select, .form-group textarea { 
             width: 100%; 
             padding: 12px 15px; 
             border: 2px solid var(--light-gray); 
@@ -177,10 +233,19 @@
             font-size: 1em;
             transition: border-color 0.3s;
         }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { 
+        .form-group input:not([type="checkbox"]):not([type="radio"]):focus, .form-group select:focus, .form-group textarea:focus { 
             outline: none; 
             border-color: var(--primary-blue); 
         }
+        /* Checkbox/radio alignment inside labels */
+        .form-group label { display: block; margin-bottom: 8px; color: #333; }
+        .form-group label > input[type="checkbox"],
+        .form-group label > input[type="radio"] {
+            width: auto; padding: 0; border: none; box-shadow: none; margin-right: 8px; vertical-align: middle; accent-color: var(--primary-blue);
+        }
+        /* When a label wraps a checkbox, align text and control on one line */
+        .form-group label > input[type="checkbox"],
+        .form-group label > input[type="radio"] { position: relative; top: 0.5px; }
         .btn { 
             background: var(--gradient-primary); 
             color: white; 
@@ -324,16 +389,26 @@
 
         <!-- Top navigation moved here (below header). Buttons wrap into rows on smaller viewports -->
         <div class="top-nav" role="tablist" aria-label="Main navigation">
-            <button class="nav-item active" onclick="showSection('dashboard')">📊 Dashboard</button>
-            <button class="nav-item" onclick="showSection('create-domain')">🌐 Create Domain Email</button>
-            <button class="nav-item" onclick="showSection('webpage-setup')">🧱 Webpage Setup</button>
-            <button class="nav-item" onclick="showSection('manage-emails')">📧 Manage Emails</button>
-            <button class="nav-item" onclick="showSection('storage')">💾 Storage Management</button>
-            <button class="nav-item" onclick="showSection('dns-manager')">🌍 DNS Manager</button>
-            <button class="nav-item" onclick="showSection('client-portal')">👥 Client Portal</button>
-            <button class="nav-item" onclick="showSection('system-logs')">🛠️ System Debug Panel</button>
-            <button class="nav-item" onclick="showSection('settings')">⚙️ Settings</button>
-            <button class="nav-item" onclick="showSparqPlug()">⚡ SparQ Plug</button>
+            <button class="nav-item active" onclick="showSection('dashboard')">Dashboard</button>
+            <button class="nav-item" onclick="showSection('create-domain')">Create Domain Email</button>
+            <button class="nav-item" onclick="showSection('webpage-setup')">Webpage Setup</button>
+            <button class="nav-item" onclick="showSection('manage-emails')">Manage Emails</button>
+            <button class="nav-item" onclick="showSection('storage')">Storage Management</button>
+            <button class="nav-item" onclick="showSection('dns-manager')">DNS Manager</button>
+            <button class="nav-item" onclick="showSection('client-portal')">Client Portal</button>
+            <button class="nav-item" onclick="showSection('system-logs')">System Debug Panel</button>
+            <button class="nav-item" onclick="showSection('settings')">Settings</button>
+            <button class="nav-item" onclick="showSparqPlug()">SparQ Plug</button>
+        </div>
+        <!-- User info pill bar with centered timestamp -->
+        <div class="userbar" aria-live="polite">
+            <div class="user-pill">
+                <span class="online-dot" aria-hidden="true"></span>
+                <span id="user-pill-label">Signed In</span>
+                <span aria-hidden="true">•</span>
+                <button type="button" class="logout-link" onclick="logout()" title="Logout">Logout</button>
+            </div>
+            <div class="user-time" id="user-time">—</div>
         </div>
 
         <div class="main-content">
@@ -923,6 +998,40 @@ SparQd Team
     
                 <script src="admin-dashboard.js"></script>
                 <script>
+                    // User pill: fill name/role and keep a live timestamp centered
+                    (function(){
+                        function format12(d){
+                            try {
+                                const mm = String(d.getMonth()+1).padStart(2,'0');
+                                const dd = String(d.getDate()).padStart(2,'0');
+                                const yyyy = d.getFullYear();
+                                let h = d.getHours();
+                                const m = String(d.getMinutes()).padStart(2,'0');
+                                const ampm = h >= 12 ? 'PM' : 'AM';
+                                h = h % 12; if (h === 0) h = 12;
+                                return `${mm}/${dd}/${yyyy} ${String(h).padStart(2,'0')}:${m} ${ampm}`;
+                            } catch(_) { return ''; }
+                        }
+                        function tick(){
+                            const el = document.getElementById('user-time');
+                            if (el) el.textContent = format12(new Date());
+                        }
+                        tick();
+                        setInterval(tick, 30000);
+                        // Populate signed-in label when available
+                        async function fillUser(){
+                            try {
+                                const r = await fetch('/api/auth/me', { credentials: 'include' });
+                                if (r.ok) {
+                                    const u = await r.json();
+                                    // Keep label minimal to match screenshot style
+                                    const lbl = document.getElementById('user-pill-label');
+                                    if (lbl) lbl.textContent = `${u.name}`;
+                                }
+                            } catch(_){ /* ignore */ }
+                        }
+                        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fillUser); else fillUser();
+                    })();
                     // Dashboard live data loader
                     (function(){
                         const $ = (id) => document.getElementById(id);
