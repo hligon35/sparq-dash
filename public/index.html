@@ -304,6 +304,18 @@
     <link rel="stylesheet" href="sparq-colors.css">
 </head>
 <body>
+    <script>
+        (async function(){
+            try {
+                const r = await fetch('/api/auth/me', { credentials: 'include' });
+                if (!r.ok) {
+                    window.location.replace('/login.html');
+                }
+            } catch (_) {
+                window.location.replace('/login.html');
+            }
+        })();
+    </script>
     <div class="container">
             <div class="header">
             <h1>Sparq Dashboard</h1>

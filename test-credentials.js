@@ -1,4 +1,4 @@
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 // Current password hash in the system
 const currentHash = '$2b$10$DDN0DoYRR7G6R0Mj6YlemeBLRZ6juETwvBGWJ9o6hCw9cPJeP5igC';

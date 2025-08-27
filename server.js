@@ -1,5 +1,9 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('./bcrypt-compat');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const connectRedis = require('connect-redis');
+const { createClient } = require('redis');
 const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
 const { promisify } = require('util');
@@ -29,6 +33,8 @@ const { router: authRouter, authenticateToken, checkPermission, ROLES, adminUser
 const app = express();
 const execAsync = promisify(exec);
 const PORT = process.env.PORT || 3003;
+// Config persistence path (overrides legacy hardcoded path)
+const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'data', 'email-admin-config.json');
 
 // Behind Cloudflare Tunnel/reverse proxy
 app.set('trust proxy', 1);
@@ -37,24 +43,76 @@ app.use('/portal', express.static(path.join(__dirname, 'public')));
 
 // Middleware
 app.use(cors({
-    origin: [
-        'http://localhost:3003',
-        'http://68.54.208.207:3003',
-        'https://admin.getsparqd.com',
-            'https://getsparqd.com', // Added getsparqd.com
-            'http://getsparqd.com',   // Added getsparqd.com
-            'https://portal.getsparqd.com',
-            'http://portal.getsparqd.com'
-    ],
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:3003,https://admin.getsparqd.com,https://portal.getsparqd.com,http://portal.getsparqd.com')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
     credentials: true
 }));
+// Security headers
+app.use(helmet({
+    // We'll control framing with CSP only (more flexible than X-Frame-Options)
+    frameguard: false,
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            // Allow inline scripts for current portal pages; consider nonces/hashes later
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrcAttr: ["'unsafe-inline'"],
+            // Keep styles permissive for inline CSS in templates
+            styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+            // Allow web fonts (e.g., Google Fonts)
+            fontSrc: ["'self'", "https:", "data:"],
+            imgSrc: ["'self'", "data:"],
+            // Allow embedding SparqPlug app in an iframe (portal -> app)
+            frameSrc: ["'self'", 'https://getsparqd.com', 'https://sparqplug.getsparqd.com'],
+            // Allow portal pages to be framed by sparqplug during SSO round-trip
+            frameAncestors: ["'self'", 'https://sparqplug.getsparqd.com'],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
+// Basic rate limiting
+app.use(rateLimit({ windowMs: 60 * 1000, limit: Number(process.env.RATE_LIMIT || 300) }));
 app.use(express.json());
+// Session store (Redis optional)
+const SESSION_SECRETS = (process.env.SESSION_SECRETS || process.env.SESSION_SECRET || 'email-admin-session-secret')
+    .split(',').map(s => s.trim()).filter(Boolean);
+let sessionStore;
+if (process.env.REDIS_URL) {
+    const client = createClient({ url: process.env.REDIS_URL });
+    client.on('error', (err) => console.error('Redis Client Error', err));
+    client.connect().catch(err => console.error('Redis connect error', err));
+    function createRedisSessionStore(sess, redisClient) {
+        try {
+            if (typeof connectRedis === 'function') {
+                const MaybeCtor = connectRedis(sess);
+                if (typeof MaybeCtor === 'function') return new MaybeCtor({ client: redisClient });
+            }
+        } catch (_) { /* fall through */ }
+        const MaybeClass = (connectRedis && (connectRedis.default || connectRedis.RedisStore))
+            ? (connectRedis.default || connectRedis.RedisStore)
+            : connectRedis;
+        if (typeof MaybeClass === 'function') {
+            try { return new MaybeClass({ client: redisClient }); } catch (_) { /* fall through */ }
+        }
+        console.warn('Unsupported connect-redis version: using MemoryStore');
+        return undefined;
+    }
+    sessionStore = createRedisSessionStore(session, client);
+}
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'email-admin-session-secret',
+    store: sessionStore,
+    secret: SESSION_SECRETS.length > 1 ? SESSION_SECRETS : SESSION_SECRETS[0],
     resave: false,
     saveUninitialized: false,
+    proxy: true,
+    name: process.env.SESSION_NAME || 'portal.sid',
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' ? true : 'auto',
+        httpOnly: true,
+        sameSite: 'lax',
+        domain: process.env.SESSION_DOMAIN || undefined,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -167,6 +225,10 @@ app.use((req, res, next) => {
 // In-memory storage (in production, use a database)
 let domains = [];
 let emailAccounts = [];
+// Per-user data stores (profiles, billing, preferences)
+let userProfiles = {};   // { [userId]: { name, phone, timezone, address: {...} } }
+let userBilling = {};    // { [userId]: { company, email, phone, taxId, address: {...}, sameAsMailing } }
+let userPreferences = {}; // { [userId]: { emails, security, updates } }
 let systemLogs = [];
 
 // Add log entry
@@ -273,22 +335,20 @@ async function createEmailAccount(email, password, domain, storageGB = 25) {
         const username = email.split('@')[0];
         const hashedPassword = await hashPassword(password);
         
-        // Create user directory
-        await execAsync(`sudo mkdir -p /var/mail/vhosts/${domain}/${username}`);
-        await execAsync(`sudo chown -R mail:mail /var/mail/vhosts/${domain}`);
-        
-        // Add to virtual mailboxes
-        await execAsync(`echo "${email} ${domain}/${username}/" | sudo tee -a /etc/postfix/virtual_mailboxes`);
-        
-        // Add password entry
-        const saltedHash = await execAsync(`doveadm pw -s SHA512-CRYPT -p "${password}"`);
-        await execAsync(`echo "${email}:${saltedHash.stdout.trim()}" | sudo tee -a /etc/dovecot/passwd.${domain}`);
-        
-        // Update postfix maps
-        await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
-        
-        // Restart services
-        await execAsync('sudo systemctl reload postfix dovecot');
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            // Create user directory
+            await execAsync(`sudo mkdir -p /var/mail/vhosts/${domain}/${username}`);
+            await execAsync(`sudo chown -R mail:mail /var/mail/vhosts/${domain}`);
+            // Add to virtual mailboxes
+            await execAsync(`echo \"${email} ${domain}/${username}/\" | sudo tee -a /etc/postfix/virtual_mailboxes`);
+            // Add password entry
+            const saltedHash = await execAsync(`doveadm pw -s SHA512-CRYPT -p \"${password}\"`);
+            await execAsync(`echo \"${email}:${saltedHash.stdout.trim()}\" | sudo tee -a /etc/dovecot/passwd.${domain}`);
+            // Update postfix maps
+            await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
+            // Restart services
+            await execAsync('sudo systemctl reload postfix dovecot');
+        }
         
         // Add to our tracking
         const account = {
@@ -327,8 +387,10 @@ async function setupDomainEmail(domainData) {
     };
     
     try {
-        // Add domain to virtual domains
-        await execAsync(`echo "${domain}" | sudo tee -a /etc/postfix/virtual_domains`);
+        // Add domain to virtual domains (skip on Windows or when simulating)
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            await execAsync(`echo "${domain}" | sudo tee -a /etc/postfix/virtual_domains`);
+        }
         
         // Create accounts
         for (const emailAddr of emailList) {
@@ -353,7 +415,7 @@ async function setupDomainEmail(domainData) {
         }
         
         // DNS setup if requested
-        if (autoDNS) {
+    if (autoDNS) {
             results.dnsRecords = [
                 { type: 'MX', name: domain, content: domain, priority: 10 },
                 { type: 'A', name: `mail.${domain}`, content: process.env.SERVER_IP || '68.54.208.207' },
@@ -395,13 +457,13 @@ async function setupDomainEmail(domainData) {
 async function sendClientCredentials(clientEmail, setupResults) {
     try {
         const transporter = nodemailer.createTransport({
-            host: 'localhost',
-            port: 587,
-            secure: false,
-            auth: {
-                user: 'admin@' + (process.env.DEFAULT_DOMAIN || 'localhost'),
-                pass: 'admin123' // You should set this up properly
-            }
+            host: process.env.EMAIL_SMTP_HOST || 'localhost',
+            port: Number(process.env.EMAIL_SMTP_PORT || 587),
+            secure: String(process.env.EMAIL_SMTP_SECURE || 'false') === 'true',
+            auth: (process.env.EMAIL_SMTP_USER && process.env.EMAIL_SMTP_PASS) ? {
+                user: process.env.EMAIL_SMTP_USER,
+                pass: process.env.EMAIL_SMTP_PASS
+            } : undefined
         });
         
         const credentialsText = setupResults.credentials.map(cred => 
@@ -409,7 +471,7 @@ async function sendClientCredentials(clientEmail, setupResults) {
         ).join('\n\n');
         
         const mailOptions = {
-            from: `"SparQd Email Admin" <admin@${process.env.DEFAULT_DOMAIN || 'localhost'}>`,
+            from: process.env.EMAIL_FROM || `"SparQd Email Admin" <admin@${process.env.DEFAULT_DOMAIN || 'localhost'}>`,
             to: clientEmail,
             subject: `🎉 Your Professional Email Hosting is Ready! (${setupResults.domain})`,
             text: `Dear ${setupResults.clientName},
@@ -537,7 +599,7 @@ app.get('/api/users/:id', authenticateToken, checkPermission('users:read'), asyn
 
 app.post('/api/users/create', authenticateToken, checkPermission('users:create'), async (req, res) => {
     try {
-        const bcrypt = require('bcrypt');
+    const bcrypt = require('./bcrypt-compat');
         const { users } = require('./auth');
         const { type, username, email, name, password, company, phone, domain } = req.body;
         
@@ -605,7 +667,7 @@ app.put('/api/users/:id', authenticateToken, checkPermission('users:update'), as
 
 app.post('/api/users/:id/reset-password', authenticateToken, checkPermission('users:update'), async (req, res) => {
     try {
-        const bcrypt = require('bcrypt');
+    const bcrypt = require('./bcrypt-compat');
         const { users } = require('./auth');
         const userId = parseInt(req.params.id);
         const userIndex = users.findIndex(u => u.id === userId);
@@ -771,9 +833,11 @@ app.post('/api/setup/directories', authenticateToken, checkPermission('domains:c
     const { domain } = req.body;
     
     try {
-        await execAsync(`sudo mkdir -p /var/mail/vhosts/${domain}`);
-        await execAsync(`sudo mkdir -p /home/sparqd/sites/${domain}`);
-        await execAsync(`sudo chown -R mail:mail /var/mail/vhosts/${domain}`);
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            await execAsync(`sudo mkdir -p /var/mail/vhosts/${domain}`);
+            await execAsync(`sudo mkdir -p /home/sparqd/sites/${domain}`);
+            await execAsync(`sudo chown -R mail:mail /var/mail/vhosts/${domain}`);
+        }
         
         res.json({ 
             success: true,
@@ -798,7 +862,21 @@ app.post('/api/setup/accounts', authenticateToken, checkPermission('domains:crea
         for (const emailAddr of emailList) {
             if (emailAddr.trim()) {
                 const password = generatePassword(14);
-                await createEmailAccount(emailAddr.trim(), password, domain);
+                if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+                    await createEmailAccount(emailAddr.trim(), password, domain);
+                } else {
+                    // Simulate creation on Windows
+                    emailAccounts.push({
+                        id: uuidv4(),
+                        address: emailAddr.trim(),
+                        domain,
+                        password,
+                        hashedPassword: await hashPassword(password),
+                        storage: 25,
+                        created: new Date().toISOString(),
+                        lastLogin: null
+                    });
+                }
                 createdAccounts.push(`${emailAddr.trim()} (${password})`);
             }
         }
@@ -816,9 +894,11 @@ app.post('/api/setup/accounts', authenticateToken, checkPermission('domains:crea
 // Configure mail server
 app.post('/api/setup/mailserver', authenticateToken, checkPermission('domains:create'), async (req, res) => {
     try {
-        await execAsync('sudo postmap /etc/postfix/virtual_domains');
-        await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
-        await execAsync('sudo systemctl reload postfix dovecot');
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            await execAsync('sudo postmap /etc/postfix/virtual_domains');
+            await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
+            await execAsync('sudo systemctl reload postfix dovecot');
+        }
         
         res.json({ 
             success: true,
@@ -838,9 +918,15 @@ app.post('/api/setup/storage', authenticateToken, checkPermission('domains:creat
     const { domain, storageAllocation } = req.body;
     
     try {
-        // Set quota (this is a simplified implementation)
-        await execAsync(`sudo mkdir -p /home/sparqd/sites/${domain}/quota`);
-        await fs.writeFile(`/home/sparqd/sites/${domain}/quota/allocation.txt`, `${storageAllocation}GB`);
+        // Set quota (simplified). On Windows or simulation, write into local data dir
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            await execAsync(`sudo mkdir -p /home/sparqd/sites/${domain}/quota`);
+            await fs.writeFile(`/home/sparqd/sites/${domain}/quota/allocation.txt`, `${storageAllocation}GB`);
+        } else {
+            const qdir = path.join(__dirname, 'data', domain, 'quota');
+            await fs.mkdir(qdir, { recursive: true });
+            await fs.writeFile(path.join(qdir, 'allocation.txt'), `${storageAllocation}GB`);
+        }
         
         res.json({ 
             success: true,
@@ -956,14 +1042,16 @@ app.post('/api/emails/reset-password', authenticateToken, checkPermission('email
         
         const newPassword = generatePassword(14);
         
-        // Update password in system
-        const saltedHash = await execAsync(`doveadm pw -s SHA512-CRYPT -p "${newPassword}"`);
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            // Update password in system
+            const saltedHash = await execAsync(`doveadm pw -s SHA512-CRYPT -p "${newPassword}"`);
+            
+            // Update dovecot password file
+            await execAsync(`sudo sed -i 's|^${email}:.*|${email}:${saltedHash.stdout.trim()}|' /etc/dovecot/passwd.${account.domain}`);
+            await execAsync('sudo systemctl reload dovecot');
+        }
         
-        // Update dovecot password file
-        await execAsync(`sudo sed -i 's|^${email}:.*|${email}:${saltedHash.stdout.trim()}|' /etc/dovecot/passwd.${account.domain}`);
-        await execAsync('sudo systemctl reload dovecot');
-        
-        // Update our record
+        // Update our record regardless (simulated locally on Windows/dev)
         account.password = newPassword;
         account.hashedPassword = await hashPassword(newPassword);
         
@@ -987,15 +1075,17 @@ app.delete('/api/emails/delete', authenticateToken, checkPermission('emails:dele
         
         const account = emailAccounts[accountIndex];
         
-        // Remove from system
-        await execAsync(`sudo sed -i '/^${email}/d' /etc/postfix/virtual_mailboxes`);
-        await execAsync(`sudo sed -i '/^${email}/d' /etc/dovecot/passwd.${account.domain}`);
-        await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
-        await execAsync('sudo systemctl reload postfix dovecot');
-        
-        // Remove directory
-        const username = email.split('@')[0];
-        await execAsync(`sudo rm -rf /var/mail/vhosts/${account.domain}/${username}`);
+        if (process.platform !== 'win32' && process.env.SIMULATE_SETUP !== 'true') {
+            // Remove from system
+            await execAsync(`sudo sed -i '/^${email}/d' /etc/postfix/virtual_mailboxes`);
+            await execAsync(`sudo sed -i '/^${email}/d' /etc/dovecot/passwd.${account.domain}`);
+            await execAsync('sudo postmap /etc/postfix/virtual_mailboxes');
+            await execAsync('sudo systemctl reload postfix dovecot');
+            
+            // Remove directory
+            const username = email.split('@')[0];
+            await execAsync(`sudo rm -rf /var/mail/vhosts/${account.domain}/${username}`);
+        }
         
         // Remove from our tracking
         emailAccounts.splice(accountIndex, 1);
@@ -1044,19 +1134,78 @@ app.post('/api/dns/test', authenticateToken, checkPermission('dns:test'), async 
     }
 });
 
+// --- Compatibility alias routes for UI fallbacks ---
+app.get('/api/stats', authenticateToken, (req, res) => {
+    const totalStorage = emailAccounts.reduce((sum, a) => sum + (a.storage || 0), 0);
+    res.json({ totalDomains: domains.length, totalEmails: emailAccounts.length, storageUsed: totalStorage, monthlySavings: domains.length * 15 });
+});
+app.get('/api/system/logs', authenticateToken, (req, res) => res.json(systemLogs.slice(0,50)));
+app.get('/api/emails', authenticateToken, (req, res) => res.json(emailAccounts.map(a=>({ email: a.address, lastLogin: a.lastLogin, role: 'User' }))));
+app.post('/api/emails', authenticateToken, async (req, res) => {
+    try {
+        const { email } = req.body || {}; if (!email) return res.status(400).json({ error:'Email required' });
+        const [user, domain] = String(email).split('@'); if (!user || !domain) return res.status(400).json({ error:'Invalid email' });
+        const pwd = generatePassword(12); await createEmailAccount(email, pwd, domain, 0.5);
+        res.json({ success:true, email });
+    } catch(e){ res.status(500).json({ error:'Failed to create email' }); }
+});
+app.post('/api/emails/reset', authenticateToken, async (req, res) => {
+    try { const { email } = req.body || {}; if (!email) return res.status(400).json({ error:'Email required' }); addLog(`Password reset requested for ${email}`); res.json({ success:true }); } catch(e){ res.status(500).json({ error:'Failed' }); }
+});
+
+// Clients list/export to satisfy UI fallbacks
+app.get('/api/clients', authenticateToken, (req,res)=>{
+    try {
+        const { users } = require('./auth');
+        const list = users.filter(u=>u.role==='client').map(u=>({ name: u.name, company: u.company, email: u.email, domain: u.domain }));
+        res.json({ clients: list });
+    } catch(e){ res.json({ clients: [] }); }
+});
+app.get('/clients', authenticateToken, (req,res)=>{
+    try {
+        const { users } = require('./auth');
+        const list = users.filter(u=>u.role==='client').map(u=>({ name: u.name, company: u.company, email: u.email, domain: u.domain }));
+        res.json(list);
+    } catch(e){ res.json([]); }
+});
+app.get('/clients/export', authenticateToken, (req,res)=>{
+    try {
+        const { users } = require('./auth');
+        const cs = [ 'Name,Username,Email,Company,Phone,Domain,Created', ...users.filter(u=>u.role==='client').map(c=>`"${c.name}","${c.username}","${c.email}","${c.company||''}","${c.phone||''}","${c.domain||''}","${c.createdAt||''}"`) ].join('\n');
+        res.setHeader('Content-Type','text/csv'); res.setHeader('Content-Disposition','attachment; filename="clients.csv"'); res.end(cs);
+    } catch(e){ res.status(500).end(''); }
+});
+
+// Minimal webpage setup stub (dev-safe)
+app.post('/api/setup/webpage', authenticateToken, checkPermission('domains:create'), async (req, res) => {
+    try {
+        const { domain, template } = req.body || {};
+        if (!domain) return res.status(400).json({ error:'Domain required' });
+        // Simulate creating a placeholder index.html in data dir on Windows/dev
+        const siteDir = process.platform === 'win32' || process.env.SIMULATE_SETUP === 'true'
+            ? path.join(__dirname, 'data', domain, 'site')
+            : `/home/sparqd/sites/${domain}`;
+        try { await fs.mkdir(siteDir, { recursive: true }); } catch(_){ }
+        const html = `<!DOCTYPE html><meta charset="utf-8"><title>${domain}</title><h1>${domain}</h1><p>Template: ${template||'basic'}</p>`;
+        try { await fs.writeFile(path.join(siteDir, 'index.html'), html); } catch(_){ }
+        res.json({ success:true, details:[`Site initialized at ${siteDir}`]});
+    } catch(e){ res.status(500).json({ error:'Webpage setup failed' }); }
+});
+
 // Initialize system
 async function initializeSystem() {
     addLog('Email Admin Dashboard starting up');
-    
+    // Ensure config dir exists
+    try { await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true }); } catch (_) {}
     // Load existing configurations if any
     try {
-        const configPath = '/home/sparqd/email-admin-config.json';
-        const configData = await fs.readFile(configPath, 'utf8');
+        const configData = await fs.readFile(CONFIG_PATH, 'utf8');
         const config = JSON.parse(configData);
-        
         domains = config.domains || [];
         emailAccounts = config.emailAccounts || [];
-        
+    userProfiles = config.userProfiles || {};
+    userBilling = config.userBilling || {};
+    userPreferences = config.userPreferences || {};
         addLog(`Loaded ${domains.length} domains and ${emailAccounts.length} email accounts`);
     } catch (error) {
         addLog('No existing configuration found, starting fresh');
@@ -1072,10 +1221,12 @@ setInterval(async () => {
                 ...acc,
                 password: undefined // Don't save plain text passwords
             })),
+            userProfiles,
+            userBilling,
+            userPreferences,
             lastSaved: new Date().toISOString()
         };
-        
-        await fs.writeFile('/home/sparqd/email-admin-config.json', JSON.stringify(config, null, 2));
+        await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
     } catch (error) {
         addLog(`Failed to save configuration: ${error.message}`, 'error');
     }
@@ -1089,3 +1240,107 @@ app.listen(PORT, async () => {
     console.log(`📧 Access at: http://localhost:${PORT}`);
     console.log(`🌐 Or: http://${process.env.SERVER_IP}:${PORT}`);
 });
+
+// ---- Additional APIs to support Storage and Settings UIs ----
+
+// Storage summary for UI (dev-friendly; replace with real metrics in prod)
+app.get('/api/storage/summary', authenticateToken, checkPermission('storage:read'), async (req, res) => {
+    try {
+        const totalGB = Number(process.env.STORAGE_TOTAL_GB || 1024);
+        const pools = {
+            email: { capacityGB: Number(process.env.EMAIL_POOL_CAP_GB || 256), allocatedGB: emailAccounts.length * 0.5 },
+            web: { capacityGB: Number(process.env.WEB_POOL_CAP_GB || 256), allocatedGB: 0 },
+            content: { capacityGB: Number(process.env.CONTENT_POOL_CAP_GB || 256), allocatedGB: 0 },
+            reserve: { capacityGB: Number(process.env.RESERVE_POOL_CAP_GB || 256), allocatedGB: 0 },
+        };
+        const allocatedGB = Object.values(pools).reduce((s, p) => s + (Number(p.allocatedGB) || 0), 0);
+        const availableGB = Math.max(0, totalGB - allocatedGB);
+        const domainList = domains.map(d => ({ domain: d.name, allocatedGB: Math.floor((d.emailCount || 0) * 0.5), usedGB: 0 }));
+        res.json({ totalGB, availableGB, allocatedGB, pools, domains: domainList });
+    } catch (e) { res.status(500).json({ error: 'Failed to compute storage summary' }); }
+});
+
+// Map /api/user/me to account profile
+app.get('/api/user/me', authenticateToken, (req, res) => {
+    const base = req.user || {};
+    const profile = userProfiles[base.id] || {};
+    res.json({
+        id: base.id,
+        username: base.username,
+        email: base.email,
+        name: base.name,
+        role: base.role,
+        phone: profile.phone || '',
+        timezone: profile.timezone || '',
+        address: profile.address || {}
+    });
+});
+
+// Update profile
+app.put('/api/user/me', authenticateToken, async (req, res) => {
+    const uid = req.user.id;
+    const cur = userProfiles[uid] || {};
+    const { name, phone, timezone, address } = req.body || {};
+    // Optionally update name in auth users array
+    try {
+        const auth = require('./auth');
+        const u = auth.users.find(x => x.id === uid);
+        if (u && name) u.name = name;
+    } catch(_){}
+    userProfiles[uid] = { ...cur, name: name ?? cur.name, phone, timezone, address };
+    res.json({ success: true });
+});
+
+// Account password change
+app.post('/api/account/password', authenticateToken, async (req, res) => {
+    try {
+        const { current, password } = req.body || {};
+        if (!password) return res.status(400).json({ error: 'New password required' });
+        const { users } = require('./auth');
+        const idx = users.findIndex(u => u.id === req.user.id);
+        if (idx === -1) return res.status(404).json({ error: 'User not found' });
+        const u = users[idx];
+        let ok = true;
+        if (u.password) ok = await bcrypt.compare(current || '', u.password);
+        if (!ok && process.env.NODE_ENV !== 'production' && process.env.DEFAULT_ADMIN_PASSWORD) {
+            ok = (current === process.env.DEFAULT_ADMIN_PASSWORD);
+        }
+        if (!ok) return res.status(400).json({ error: 'Current password incorrect' });
+        users[idx].password = await bcrypt.hash(password, 10);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'Failed to update password' }); }
+});
+
+// Preferences
+app.get('/api/account/preferences', authenticateToken, (req, res) => {
+    res.json(userPreferences[req.user.id] || { emails: true, security: true, updates: false });
+});
+app.put('/api/account/preferences', authenticateToken, (req, res) => {
+    const cur = userPreferences[req.user.id] || {};
+    const { emails, security, updates } = req.body || {};
+    userPreferences[req.user.id] = { emails: !!emails, security: !!security, updates: !!updates };
+    res.json({ success: true });
+});
+
+// Billing
+app.get('/api/billing', authenticateToken, (req, res) => {
+    res.json(userBilling[req.user.id] || { company: '', email: req.user.email, phone: '', taxId: '', sameAsMailing: true, address: {} });
+});
+app.put('/api/billing', authenticateToken, (req, res) => {
+    const { company, email, phone, taxId, address, sameAsMailing } = req.body || {};
+    userBilling[req.user.id] = { company: company||'', email: email||'', phone: phone||'', taxId: taxId||'', address: address||{}, sameAsMailing: !!sameAsMailing };
+    res.json({ success: true });
+});
+
+// Lightweight SparQy assistant stubs
+app.get('/api/sparqy/health', authenticateToken, (req,res)=> res.json({ ok:true, model:'stub', time: Date.now() }));
+const sparqyHistory = [];
+app.get('/api/sparqy/history', authenticateToken, (req,res)=> res.json({ messages: sparqyHistory.slice(-20) }));
+app.post('/api/sparqy/chat', authenticateToken, express.json(), (req,res)=>{
+    const { content } = req.body || {}; const userMsg = { role:'user', content: String(content||'').slice(0,2000), at: Date.now() };
+    sparqyHistory.push(userMsg);
+    const reply = { role:'assistant', content: 'This is a local dev stub. Your message was: ' + userMsg.content, at: Date.now(), sources: [] };
+    sparqyHistory.push(reply);
+    res.json(reply);
+});
+app.post('/api/sparqy/clear', authenticateToken, (req,res)=>{ sparqyHistory.length = 0; res.json({ ok:true }); });

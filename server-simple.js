@@ -1,5 +1,5 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('./bcrypt-compat');
 const nodemailer = require('nodemailer');
 const { exec } = require('child_process');
 const { promisify } = require('util');

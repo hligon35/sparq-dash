@@ -120,6 +120,30 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     console.log('Dashboard initialization complete');
+
+    // Delegate clicks on top navigation as a safety net when inline onclicks fail
+    try {
+        const topNav = document.querySelector('.top-nav');
+        if (topNav && !topNav.__boundShowSection) {
+            topNav.addEventListener('click', (e) => {
+                const btn = e.target.closest('.nav-item');
+                if (!btn) return;
+                const m = /showSection\('([^']+)'\)/.exec(btn.getAttribute('onclick') || '');
+                const id = m && m[1];
+                if (id) {
+                    e.preventDefault();
+                    showSection(id, e);
+                    try { history.replaceState(null, '', '#' + id); } catch(_) {}
+                }
+            });
+            topNav.__boundShowSection = true;
+        }
+        // Activate hash-linked section on load (e.g., #dns-manager)
+        const hash = (location.hash || '').replace(/^#/, '');
+        if (hash && document.getElementById(hash)) {
+            setTimeout(() => showSection(hash), 0);
+        }
+    } catch (_) {}
 });
 
 // Check if user is authenticated
@@ -380,24 +404,36 @@ async function fetchWithAuth(url, options = {}) {
     return authenticatedFetch(url, options);
 }
 
-// Show/hide sections
-function showSection(sectionId) {
-    // Hide all sections
-    document.querySelectorAll('.section').forEach(section => {
-        section.classList.remove('active');
-    });
-    
-    // Remove active class from nav items
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    // Show selected section
-    document.getElementById(sectionId).classList.add('active');
-    
-    // Add active class to clicked nav item
-    event.target.classList.add('active');
+// Show/hide sections (robust: does not depend on implicit global event)
+function showSection(sectionId, ev) {
+    try {
+        // Hide all sections
+        document.querySelectorAll('.section').forEach(section => section.classList.remove('active'));
+        // Show requested
+        const target = document.getElementById(sectionId);
+        if (target) target.classList.add('active');
+
+        // Update nav button active state safely
+        document.querySelectorAll('.top-nav .nav-item').forEach(item => item.classList.remove('active'));
+        const e = ev || (typeof event !== 'undefined' ? event : null);
+        let btn = null;
+        if (e && e.target) btn = e.target.closest('.nav-item');
+        if (!btn) {
+            // Fallback: match button by its onclick attribute content
+            btn = document.querySelector(`.top-nav .nav-item[onclick*="showSection('${sectionId}')"]`);
+        }
+        if (btn) btn.classList.add('active');
+
+        // Initialize Settings tab default pane
+        if (sectionId === 'settings' && typeof window.showSettingsTab === 'function') {
+            window.showSettingsTab('profile');
+        }
+    } catch (err) {
+        console.warn('showSection error:', err);
+    }
 }
+// Ensure global for inline handlers
+if (typeof window !== 'undefined') window.showSection = showSection;
 
 // Load dashboard statistics
 async function loadDashboardStats() {

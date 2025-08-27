@@ -1,0 +1,24 @@
+version: '3.9'
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+  app:
+    build: .
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - REDIS_URL=redis://redis:6379
+      - SESSION_SECRETS=change-me-1,change-me-2
+      - CORS_ORIGINS=http://localhost:3003
+    ports:
+      - "3003:3003"
+    depends_on:
+      - redis
+    volumes:
+      - app-data:/var/lib/sparq
+volumes:
+  redis-data: {}
+  app-data: {}
