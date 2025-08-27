@@ -7,7 +7,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <script src="base-path.js"></script>
     <script src="password-peek.js"></script>
+    <script src="shared-header-nav.js" defer></script>
     <style>
+        /* Hide legacy header overlay user info injected by admin-dashboard.js */
+        .header .user-info { display: none !important; }
+        /* User info bar is injected by shared-header-nav.js */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --primary-orange: #f59c28;
@@ -195,20 +199,8 @@
             box-shadow: 0 2px 6px rgba(26,120,216,0.12);
             transform: translateY(-1px);
         }
-        /* Hide legacy header overlay user info injected by admin-dashboard.js */
-        .header .user-info { display: none !important; }
-        /* User info bar styles */
-        .userbar { 
-            display:flex; flex-direction:column; align-items:center; gap:6px; 
-            position: fixed; top: 10px; right: 14px; 
-            padding: 0; background: transparent; border: none; 
-            z-index: 1000;
-        }
-    .userbar .user-pill { display:inline-flex; align-items:center; gap:10px; padding:6px 12px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; color:#111; box-shadow:0 2px 8px rgba(0,0,0,.10); font-size: 14px; }
-    .userbar .online-dot { width:10px; height:10px; border-radius:999px; background:#f59e0b; box-shadow:0 0 0 2px #fff inset; }
-    .userbar .logout-link { background:transparent; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0; }
-    .userbar .logout-link:hover { text-decoration: underline; }
-    .userbar .user-time { font-size: 12px; color:#ffffff; text-align:center; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+    /* Hide legacy header overlay user info injected by admin-dashboard.js */
+    .header .user-info { display: none !important; }
         .section { display: none; }
         .section.active { display: block; }
         .card { 
@@ -400,16 +392,7 @@
             <button class="nav-item" onclick="showSection('settings')">Settings</button>
             <button class="nav-item" onclick="showSparqPlug()">SparQ Plug</button>
         </div>
-        <!-- User info pill bar with centered timestamp -->
-        <div class="userbar" aria-live="polite">
-            <div class="user-pill">
-                <span class="online-dot" aria-hidden="true"></span>
-                <span id="user-pill-label">Signed In</span>
-                <span aria-hidden="true">•</span>
-                <button type="button" class="logout-link" onclick="logout()" title="Logout">Logout</button>
-            </div>
-            <div class="user-time" id="user-time">—</div>
-        </div>
+    <!-- User info bar is injected by shared-header-nav.js -->
 
         <div class="main-content">
             <div class="sidebar" aria-hidden="true">

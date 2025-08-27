@@ -20,7 +20,10 @@
     // Style block mirroring index.html header/nav look
     const css = `
 :root { --primary-orange:#f59c28; --secondary-orange:#f7b626; --primary-blue:#1a78d8; --secondary-blue:#1a78d8; --white:#fff; --off-white:#f8f9fa; --light-gray:#e9ecef; --dark-gray:#343a40; }
-.shared-header { background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%); color:#fff; padding:18px 24px; text-align:center; }
+/* Hide legacy header overlay user info injected by admin-dashboard.js */
+.header .user-info { display:none !important; }
+.shared-header { background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-blue) 100%); color:#fff; padding:18px 24px; text-align:center; position:relative; }
+.header { position:relative; }
 .shared-header h1 { font-size: 2.0em; margin-bottom: 6px; }
 .shared-header p { opacity:.9; }
 .top-nav { display:flex; gap:8px; padding:14px 18px; background:#fff; border-bottom:1px solid var(--light-gray); align-items:center; flex-wrap:wrap; overflow-x:auto; -webkit-overflow-scrolling:touch; justify-content:center; }
@@ -29,61 +32,69 @@
 .top-nav .nav-item.active { background:#eff6ff; color:var(--primary-blue); border-color:var(--primary-blue); box-shadow:0 2px 6px rgba(26,120,216,.12); }
 .top-nav .nav-item::before { content:''; display:inline-block; width:8px; height:8px; border-radius:999px; background:#cbd5e1; margin-right:8px; box-shadow:0 0 0 2px #fff; }
 .top-nav .nav-item.active::before { background:var(--primary-blue); box-shadow:0 0 0 2px #eff6ff; }
-.userbar { display:flex; flex-direction:column; align-items:center; gap:6px; position:fixed; top:10px; right:14px; padding:0; background:transparent; border:none; z-index:1000; }
-.userbar .user-pill { display:inline-flex; align-items:center; gap:10px; padding:6px 12px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; color:#111; box-shadow:0 2px 8px rgba(0,0,0,.10); font-size:14px; }
-.userbar .online-dot { width:10px; height:10px; border-radius:999px; background:#f59e0b; box-shadow:0 0 0 2px #fff inset; }
+/* Userbar made ~25% more compact and aligned with header title */
+.userbar { display:flex; flex-direction:column; align-items:center; gap:4px; position:absolute; top:18px; right:14px; padding:0; background:transparent; border:none; z-index:1000; }
+.userbar .user-pill { display:inline-flex; align-items:center; gap:8px; padding:4px 9px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; color:#111; box-shadow:0 2px 8px rgba(0,0,0,.10); font-size:11px; }
+.userbar .online-dot { width:8px; height:8px; border-radius:999px; background:#f59e0b; box-shadow:0 0 0 2px #fff inset; }
 .userbar .logout-link { background:transparent; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0; }
 .userbar .logout-link:hover { text-decoration: underline; }
-.userbar .user-time { font-size:12px; color:#ffffff; text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.25); }
+.userbar .user-time { font-size:9px; color:#ffffff; text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.25); }
+/* Fallback if a page lacks a header: keep it visible in the corner */
+body > .userbar { position:fixed; top:8px; right:14px; }
 `;
     const style = document.createElement('style');
     style.id = 'portal-shared-header-style';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
 
-    injectUI(false);
+  injectUI(false);
 
     function injectUI(alreadyStyled){
-      // Don’t duplicate if a header is already present
-      if (document.querySelector('.header, .shared-header')) return;
-      const frag = document.createDocumentFragment();
+  const hasHeader = document.querySelector('.header, .shared-header');
+      // Only inject header + nav if the page doesn’t already define its own
+      if (!hasHeader) {
+        const frag = document.createDocumentFragment();
+        const header = document.createElement('div');
+        header.className = 'shared-header';
+        header.innerHTML = '<h1>Sparq Dashboard</h1><p>Account Management</p>';
+        const nav = document.createElement('div');
+        nav.className = 'top-nav';
+        const items = [
+          ['Dashboard','dashboard'],
+          ['Create Domain Email','create-domain'],
+          ['Webpage Setup','webpage-setup'],
+          ['Manage Emails','manage-emails'],
+          ['Storage Management','storage'],
+          ['DNS Manager','dns-manager'],
+          ['Client Portal','client-portal'],
+          ['System Debug Panel','system-logs'],
+          ['Settings','settings'],
+        ];
+        items.forEach(([label,hash],i)=>{
+          const a = document.createElement('a');
+          a.className = 'nav-item' + (i===0?' active':'');
+          a.href = window.__withBase__('/index.html#' + hash);
+          a.textContent = label;
+          nav.appendChild(a);
+        });
+        frag.appendChild(header);
+        frag.appendChild(nav);
+        document.body.insertBefore(frag, document.body.firstChild);
+      }
 
-      const header = document.createElement('div');
-      header.className = 'shared-header';
-      header.innerHTML = '<h1>Sparq Dashboard</h1><p>Account Management</p>';
-
-      const nav = document.createElement('div');
-      nav.className = 'top-nav';
-      const items = [
-        ['Dashboard','dashboard'],
-        ['Create Domain Email','create-domain'],
-        ['Webpage Setup','webpage-setup'],
-        ['Manage Emails','manage-emails'],
-        ['Storage Management','storage'],
-        ['DNS Manager','dns-manager'],
-        ['Client Portal','client-portal'],
-        ['System Debug Panel','system-logs'],
-        ['Settings','settings'],
-      ];
-      items.forEach(([label,hash],i)=>{
-        const a = document.createElement('a');
-        a.className = 'nav-item' + (i===0?' active':'');
-        a.href = window.__withBase__('/index.html#' + hash);
-        a.textContent = label;
-        nav.appendChild(a);
-      });
-
-      const userbar = document.createElement('div');
-      userbar.className = 'userbar';
-      userbar.innerHTML = '<div class="user-pill"><span class="online-dot" aria-hidden="true"></span><span id="user-pill-label">Signed In</span><span aria-hidden="true">•</span><button type="button" class="logout-link" title="Logout">Logout</button></div><div class="user-time" id="user-time">—</div>';
-
-      frag.appendChild(header);
-      frag.appendChild(nav);
-      document.body.insertBefore(frag, document.body.firstChild);
-      document.body.appendChild(userbar);
+      // Ensure a single userbar exists on every page
+      let userbar = document.querySelector('.userbar');
+      if (!userbar) {
+        userbar = document.createElement('div');
+        userbar.className = 'userbar';
+        userbar.innerHTML = '<div class="user-pill"><span class="online-dot" aria-hidden="true"></span><span id="user-pill-label">Signed In</span><span aria-hidden="true">•</span><button type="button" class="logout-link" title="Logout">Logout</button></div><div class="user-time" id="user-time">—</div>';
+        // Place inside the header so it aligns with the title; fallback to body if missing
+        const headerEl = document.querySelector('.header, .shared-header');
+        if (headerEl) headerEl.appendChild(userbar); else document.body.appendChild(userbar);
+      }
 
       // Wire logout if available globally
-      userbar.querySelector('.logout-link')?.addEventListener('click', function(){
+  userbar.querySelector('.logout-link')?.addEventListener('click', function(){
         if (typeof window.logout === 'function') return window.logout();
         // fallback: hit /api/auth/logout then redirect to login
         try { fetch('/api/auth/logout', { method:'POST', credentials:'include' }).finally(()=>{ window.location.assign(window.__withBase__('/login.html')); }); } catch(_) { window.location.assign(window.__withBase__('/login.html')); }
