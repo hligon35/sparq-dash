@@ -1438,10 +1438,10 @@ SparQd Team
                         }
                     }
 
-                    // Open SparQ Plug in the current window (recommended)
+                    // Open SparQ Plug in a new tab (per requirement)
                     async function showSparqPlug() {
                         // If we already fetched the URL, go directly
-                        if (__sparqplugUrl) { window.location.assign(__sparqplugUrl); return; }
+                        if (__sparqplugUrl) { window.open(__sparqplugUrl, '_blank', 'noopener'); return; }
                         // Fetch role URL from the portal API (handles /portal prefix when applicable)
                         async function fetchPortalJSON(path) {
                             const clean = path.startsWith('/') ? path : '/' + path;
@@ -1463,13 +1463,12 @@ SparQd Team
                             const data = await fetchPortalJSON('/api/sparqplug/url');
                             if (data && data.url) {
                                 __sparqplugUrl = data.url;
-                                window.location.assign(__sparqplugUrl);
+                                window.open(__sparqplugUrl, '_blank', 'noopener');
                                 return;
                             }
                         } catch (_) {
-                            // Fall back to embedded view if fetch fails
-                            showSection('sparq-plug');
-                            loadSparqPlugEmbed();
+                            // Fall back to embedded view only if desired later; for now keep new-tab UX
+                            try { alert('Opening SparQ Plug failed. Please try again from the top nav.'); } catch(_){ }
                         }
                     }
                 </script>
