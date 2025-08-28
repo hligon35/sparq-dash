@@ -14,7 +14,7 @@ const services = [
     name: 'sparqplug',
     base: process.env.PLUG_URL || 'https://sparqplug.getsparqd.com',
     versionPath: '/api/version',
-    healthPath: '/_app_health',
+  healthPath: '/api/version',
   },
   {
     name: 'landing',
