@@ -49,13 +49,19 @@ app.set('trust proxy', 1);
 app.use('/portal', express.static(path.join(__dirname, 'public')));
 
 // Middleware
-app.use(cors({
-    origin: (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean),
-    credentials: true
-}));
+// Merge global CORS allowlist with contact-routing allowOrigins
+let corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+try {
+    const fsSync = require('fs');
+    const rawCR = fsSync.readFileSync(path.join(__dirname, 'data', 'contact-routing.json'), 'utf8');
+    const cr = JSON.parse(rawCR);
+    const more = Array.isArray(cr.allowOrigins) ? cr.allowOrigins : [];
+    corsOrigins = Array.from(new Set([...corsOrigins, ...more]));
+} catch (_) { /* optional */ }
+app.use(cors({ origin: corsOrigins, credentials: true }));
 // Security headers
 app.use(helmet({
     // We'll control framing with CSP only (more flexible than X-Frame-Options)
