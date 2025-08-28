@@ -193,20 +193,18 @@ let systemLogs = [];
 // Users with secure management
 const users = {
     'hligon': { 
-        password: 'temporary', 
         role: 'admin', 
-        name: 'H. Ligon',
+        name: 'Harold Ligon',
         email: 'hligon@getsparqd.com',
-        requirePasswordChange: true,
+        requirePasswordChange: false,
         lastLogin: null,
         created: new Date().toISOString()
     },
     'bhall': { 
-        password: 'temporary', 
         role: 'admin', 
         name: 'B. Hall',
         email: 'bhall@getsparqd.com',
-        requirePasswordChange: true,
+        requirePasswordChange: false,
         lastLogin: null,
         created: new Date().toISOString()
     }
@@ -247,66 +245,39 @@ app.post('/api/auth/login', async (req, res) => {
             addLog('Login attempt missing credentials', 'warn');
             return res.status(400).json({ error: 'Missing credentials' });
         }
-    // Prefer hashed password in state; fall back to seeded in-memory users (migrate on success)
-    await loadUserState();
-    const stateUser = getOrInitUser(username);
-    const seeded = users[username];
-    let authenticated = false;
-    if (stateUser && stateUser.passwordHash) {
-        try { authenticated = await bcrypt.compare(password, stateUser.passwordHash); } catch (_) { authenticated = false; }
-    } else if (seeded && seeded.password === password) {
-        authenticated = true;
-        // Migrate to hashed on first successful login
-        try {
-            stateUser.passwordHash = await bcrypt.hash(password, 10);
-            await saveUserState();
-        } catch (_) {}
-    }
-    if (authenticated && (seeded || stateUser)) {
-        // Update last login
-        if (seeded) seeded.lastLogin = new Date().toISOString();
-        if (stateUser) stateUser.meta = { ...(stateUser.meta || {}), lastLogin: new Date().toISOString() };
-
-        // Regenerate to avoid fixation and ensure fresh session
+        const FIXED_ADMIN_PASS = 'sparqd2025!';
+        const allowed = ['hligon','bhall'];
+        if (!allowed.includes(username) || password !== FIXED_ADMIN_PASS) {
+            addLog(`Invalid login for ${username}`, 'warn');
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        const seeded = users[username];
         return req.session.regenerate((err) => {
             if (err) {
                 addLog(`Session regenerate failed: ${err.message}`, 'error');
                 return res.status(500).json({ error: 'Session error' });
             }
-            const profile = (stateUser && stateUser.profile) || {};
-            const role = (seeded && seeded.role) || 'client';
-            const requirePasswordChange = (seeded && seeded.requirePasswordChange) || false;
-            req.session.user = { username, role, name: profile.name || seeded?.name || username, email: profile.email || seeded?.email || '', requirePasswordChange };
+            const role = seeded?.role || 'admin';
+            req.session.user = { username, role, name: seeded?.name || username, email: seeded?.email || '' };
             req.session.save((saveErr) => {
                 if (saveErr) {
                     addLog(`Session save failed: ${saveErr.message}`, 'error');
                     return res.status(500).json({ error: 'Session save error' });
                 }
-                // Generate a simple token for frontend compatibility
                 const token = Buffer.from(`${username}:${Date.now()}`).toString('base64');
-                // Issue SSO cookies for cross-subdomain auth
                 try {
                     const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
                     const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
                     const sameSite = 'lax';
                     const ssoSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
-                    const ssoTtl = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60); // 1h
-                    const ssoToken = jwt.sign({ username, role, name: profile.name || seeded?.name || username, email: profile.email || seeded?.email || '' }, ssoSecret, { expiresIn: ssoTtl });
+                    const ssoTtl = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60);
+                    const ssoToken = jwt.sign({ username, role, name: seeded?.name || username, email: seeded?.email || '' }, ssoSecret, { expiresIn: ssoTtl });
                     res.cookie('sparq_sso', ssoToken, { httpOnly: true, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
                     res.cookie('role', String(role || ''), { httpOnly: false, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
-                } catch (_) { /* best-effort */ }
-                return res.json({
-                    success: true,
-                    token,
-                    user: req.session.user,
-                    requirePasswordChange
-                });
+                } catch (_) { }
+                return res.json({ success: true, token, user: req.session.user });
             });
         });
-    } else {
-        addLog(`Invalid login for ${username}`, 'warn');
-        res.status(401).json({ error: 'Invalid credentials' });
-    }
     } catch (e) {
         addLog(`Login error: ${e.message}`, 'error');
         return res.status(400).json({ error: 'Bad Request' });
@@ -315,33 +286,10 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Change password
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
-    const { currentPassword, newPassword, current, password } = req.body || {};
-    const username = req.session.user.username;
-    const seeded = users[username];
-    await loadUserState();
-    const sUser = getOrInitUser(username);
-    // Validate current password
-    let ok = false;
-    const cur = (currentPassword ?? current ?? '');
-    if (sUser && sUser.passwordHash) {
-        try { ok = await bcrypt.compare(cur, sUser.passwordHash); } catch (_) { ok = false; }
-    } else if (seeded && seeded.password === cur) {
-        ok = true;
-    }
-    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
-    const nextPw = String(newPassword ?? password ?? '');
-    if (!nextPw || nextPw.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters long' });
-    // Persist new hash and update seed for back-compat
-    try { sUser.passwordHash = await bcrypt.hash(nextPw, 10); await saveUserState(); } catch (e) { return res.status(500).json({ error: 'Failed to save new password' }); }
-    if (seeded) { seeded.password = nextPw; seeded.requirePasswordChange = false; seeded.lastPasswordChange = new Date().toISOString(); }
-    req.session.user.requirePasswordChange = false;
-    addLog(`Password changed for user ${username}`);
-    res.json({ success: true, message: 'Password updated successfully' });
+    return res.status(403).json({ error: 'Password change is disabled' });
 });
-// Alias for UI candidates
 app.post('/api/account/password', requireAuth, async (req, res) => {
-    req.url = '/api/auth/change-password';
-    return app._router.handle(req, res);
+    return res.status(403).json({ error: 'Password change is disabled' });
 });
 
 // Request password reset
@@ -1517,65 +1465,11 @@ app.get('/api/portal/health', requireAuth, (req, res) => {
 });
 
 // Emails: list (alias), create (safe/in-memory), reset (stub)
-app.get('/api/emails', requireAuth, (req, res) => {
-    const list = emailAccounts.map(acc => ({
-        email: acc.address || acc.email,
-        address: acc.address || acc.email,
-        domain: acc.domain || (acc.address && String(acc.address).split('@')[1]) || '',
-        storage: acc.storage,
-        lastLogin: acc.lastLogin,
-        role: 'User'
-    }));
-    res.json(list);
+app.post('/api/auth/request-reset', (req, res) => {
+    return res.status(403).json({ error: 'Password reset is disabled' });
 });
-app.post('/api/emails', requireAuth, async (req, res) => {
-    try {
-        const { email, storageGB } = req.body || {};
-        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Invalid email' });
-        const domain = String(email).split('@')[1];
-        // Non-destructive by default: only track in-memory. Use setup endpoints for real provisioning.
-        const account = {
-            id: uuidv4(), address: email, domain, storage: Number(storageGB) || 25,
-            created: new Date().toISOString(), lastLogin: null
-        };
-        emailAccounts.push(account);
-        addLog(`Queued new email (in-memory): ${email}`);
-        res.json({ success: true, account: { email, domain, storage: account.storage } });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to add email' });
-    }
-});
-app.post('/api/emails/reset', requireAuth, async (req, res) => {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ error: 'Email required' });
-    addLog(`Password reset requested (stub) for ${email}`);
-    res.json({ success: true });
-});
-
-// Clients: derive from domains array; export
-app.get('/api/clients', requireAuth, (req, res) => {
-    const items = domains.map(d => ({ name: d.clientName || d.name, domain: d.name, contact: d.clientContact }));
-    res.json({ clients: items });
-});
-app.get('/api/clients/export', requireAuth, (req, res) => {
-    const items = domains.map(d => ({ name: d.clientName || '', domain: d.name, email: d.clientContact || '' }));
-    const header = 'name,domain,email\n';
-    const rows = items.map(i => `${JSON.stringify(i.name).slice(1,-1)},${JSON.stringify(i.domain).slice(1,-1)},${JSON.stringify(i.email).slice(1,-1)}`).join('\n');
-    const csv = header + rows + '\n';
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="clients.csv"');
-    res.send(csv);
-});
-
-// DNS test
-app.get('/api/dns/test', requireAuth, async (req, res) => {
-    try {
-        const dns = require('dns').promises;
-        const [a1] = await dns.resolve4('google.com');
-        res.json({ ok: true, sample: a1 });
-    } catch (e) {
-        res.json({ ok: false, error: e.message });
-    }
+app.post('/api/auth/reset-password', (req, res) => {
+    return res.status(403).json({ error: 'Password reset is disabled' });
 });
 
 // Initialize system
@@ -1668,6 +1562,5 @@ app.listen(PORT, async () => {
     console.log(`\n🎉 Email Admin Dashboard is ready!`);
     console.log(`📧 Access at: http://localhost:${PORT}`);
     console.log(`🌐 Or: http://${process.env.SERVER_IP}:${PORT}`);
-    console.log(`🔐 Admin login: admin / admin123`);
-    console.log(`👥 Manager login: manager / manager123`);
+    // Login now handled via embedded admin users in main server
 });

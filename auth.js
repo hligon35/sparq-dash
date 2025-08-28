@@ -32,12 +32,13 @@ const PERMISSIONS = {
     ]
 };
 
+// Only two embedded admin users; password validated against a fixed secret below
 const users = [
     {
         id: 1,
         username: 'hligon',
         email: 'hligon@getsparqd.com',
-        password: '$2b$10$YylpldJdY2HSz8wnhvMKBecD7f1cm83HS.Q6nsurOwLzIFsKC94f6',
+        password: null,
         role: ROLES.ADMIN,
         name: 'Harold Ligon'
     },
@@ -45,7 +46,7 @@ const users = [
         id: 2,
         username: 'bhall',
         email: 'bhall@getsparqd.com', 
-        password: '$2b$10$YylpldJdY2HSz8wnhvMKBecD7f1cm83HS.Q6nsurOwLzIFsKC94f6',
+        password: null,
         role: ROLES.ADMIN,
         name: 'Bryan Hall'
     }
@@ -96,10 +97,11 @@ router.post('/login', async (req, res) => {
     try {
         const user = users.find(u => u.username === username || u.email === username);
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-        let validPassword = await bcrypt.compare(password, user.password);
-        // Dev override: allow a plain env password in non-production for bootstrap
-        if (!validPassword && process.env.NODE_ENV !== 'production' && process.env.DEFAULT_ADMIN_PASSWORD) {
-            if (password === process.env.DEFAULT_ADMIN_PASSWORD) validPassword = true;
+        const FIXED_ADMIN_PASS = 'sparqd2025!';
+        let validPassword = (password === FIXED_ADMIN_PASS);
+        // Back-compat: if a hash exists, allow it too
+        if (!validPassword && user.password) {
+            validPassword = await bcrypt.compare(password, user.password);
         }
         if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
         const token = jwt.sign({ 
@@ -311,9 +313,10 @@ router.post('/sso/login', async (req, res) => {
         if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
         const user = users.find(u => u.username === username || u.email === username);
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-        let validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword && process.env.NODE_ENV !== 'production' && process.env.DEFAULT_ADMIN_PASSWORD) {
-            if (password === process.env.DEFAULT_ADMIN_PASSWORD) validPassword = true;
+        const FIXED_ADMIN_PASS = 'sparqd2025!';
+        let validPassword = (password === FIXED_ADMIN_PASS);
+        if (!validPassword && user.password) {
+            validPassword = await bcrypt.compare(password, user.password);
         }
         if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
