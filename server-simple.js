@@ -24,6 +24,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const connectRedis = require('connect-redis');
 const { createClient } = require('redis');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 // Node 18+ has global fetch; ensure availability
 const _fetch = globalThis.fetch || require('node-fetch');
@@ -283,6 +284,17 @@ app.post('/api/auth/login', async (req, res) => {
                 }
                 // Generate a simple token for frontend compatibility
                 const token = Buffer.from(`${username}:${Date.now()}`).toString('base64');
+                // Issue SSO cookies for cross-subdomain auth
+                try {
+                    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+                    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+                    const sameSite = 'lax';
+                    const ssoSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
+                    const ssoTtl = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60); // 1h
+                    const ssoToken = jwt.sign({ username, role, name: profile.name || seeded?.name || username, email: profile.email || seeded?.email || '' }, ssoSecret, { expiresIn: ssoTtl });
+                    res.cookie('sparq_sso', ssoToken, { httpOnly: true, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
+                    res.cookie('role', String(role || ''), { httpOnly: false, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
+                } catch (_) { /* best-effort */ }
                 return res.json({
                     success: true,
                     token,
@@ -395,6 +407,54 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
     res.json(req.session.user);
+});
+
+// --- SSO endpoints for cross-subdomain auth ---
+// POST /api/auth/sso/login — alias to /api/auth/login but ensures cookies set and returns redirect-safe payload
+app.post('/api/auth/sso/login', async (req, res) => {
+    // Delegate to normal login handler to set session + cookies; then format response
+    const { username, password, returnTo } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+    // Temporarily hook into the existing handler by calling it inline (avoid refactor)
+    const fakeReq = req; const fakeRes = {
+        ...res,
+        json: (payload) => {
+            try {
+                const safeRt = (typeof returnTo === 'string' && /^https:\/\/(?:[\w-]+\.)*getsparqd\.com/.test(returnTo)) ? returnTo : undefined;
+                return res.json({ success: true, user: payload?.user || null, redirect: safeRt });
+            } catch (_) { return res.json({ success: true }); }
+        }
+    };
+    // Call original logic by emulating body
+    fakeReq.body = { username, password };
+    return app._router.handle(fakeReq, fakeRes, null);
+});
+
+// GET /api/auth/sso/me — verify sparq_sso cookie and return claims
+app.get('/api/auth/sso/me', (req, res) => {
+    try {
+        const cookieHeader = req.headers['cookie'] || '';
+        const m = /(?:^|;\s*)sparq_sso=([^;]+)/.exec(cookieHeader);
+        const raw = m && m[1];
+        if (!raw) return res.status(401).json({ error: 'No SSO cookie' });
+        const secret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
+        const payload = jwt.verify(decodeURIComponent(raw), secret);
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ok: true, user: { username: payload.username, email: payload.email, role: payload.role, name: payload.name } });
+    } catch (e) {
+        return res.status(401).json({ error: 'Invalid or expired SSO' });
+    }
+});
+
+// POST /api/auth/sso/logout — clear cross-subdomain cookies and destroy session
+app.post('/api/auth/sso/logout', (req, res) => {
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+    const sameSite = 'lax';
+    try { res.cookie('sparq_sso', '', { httpOnly: true, secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' }); } catch(_){ }
+    try { res.cookie('role', '', { httpOnly: false, secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' }); } catch(_){ }
+    if (req.session) req.session.destroy(() => {});
+    res.json({ success: true });
 });
 
 // Common alias used by some UIs

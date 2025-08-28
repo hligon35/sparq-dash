@@ -43,7 +43,7 @@ app.use('/portal', express.static(path.join(__dirname, 'public')));
 
 // Middleware
 app.use(cors({
-    origin: (process.env.CORS_ORIGINS || 'http://localhost:3003,https://admin.getsparqd.com,https://portal.getsparqd.com,http://portal.getsparqd.com')
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
         .split(',')
         .map(s => s.trim())
         .filter(Boolean),

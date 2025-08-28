@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('./bcrypt-compat');
 const jwt = require('jsonwebtoken');
 const session = require('express-session');
+const cookie = require('cookie');
 
 const router = express.Router();
 
@@ -115,6 +116,17 @@ router.post('/login', async (req, res) => {
             email: user.email,
             name: user.name
         };
+        // Also issue parent-domain SSO cookies for cross-subdomain auth
+        try {
+            const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+            const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+            const sameSite = 'lax';
+            const ssoSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
+            const ssoTtl = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60); // 1h default
+            const ssoToken = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role, name: user.name }, ssoSecret, { expiresIn: ssoTtl });
+            res.cookie?.('sparq_sso', ssoToken, { httpOnly: true, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
+            res.cookie?.('role', String(user.role || ''), { httpOnly: false, secure, sameSite, domain, maxAge: ssoTtl * 1000, path: '/' });
+        } catch (_) { /* best-effort */ }
         res.json({
             success: true,
             token,
@@ -249,3 +261,100 @@ module.exports = {
     clients,
     users // Add users export
 };
+
+// --- SSO endpoints (mounted under /api/auth) ---
+// Issues/clears/verifies a parent-domain JWT cookie so subdomains can share auth
+// Cookie name and secrets are configurable via env.
+
+// Helper to sign JWT and set cookies on response
+function issueSsoCookies(res, user, opts = {}) {
+    const jwtSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
+    const maxAgeSeconds = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60); // 1h default
+    const payload = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        name: user.name
+    };
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: maxAgeSeconds });
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+    const sameSite = 'lax';
+    // Set main SSO cookie (httpOnly)
+    res.cookie?.('sparq_sso', token, {
+        httpOnly: true,
+        secure,
+        sameSite,
+        domain,
+        maxAge: maxAgeSeconds * 1000,
+        path: '/'
+    });
+    // Also expose a minimal non-HTTPOnly role hint for client-side UX (optional)
+    try {
+        res.append?.('Set-Cookie', cookie.serialize('role', String(user.role || ''), {
+            httpOnly: false,
+            secure: !!secure,
+            sameSite,
+            domain,
+            maxAge: maxAgeSeconds,
+            path: '/'
+        }));
+    } catch (_) { /* best-effort */ }
+    return token;
+}
+
+// POST /api/auth/sso/login — authenticate and set parent-domain cookie(s)
+router.post('/sso/login', async (req, res) => {
+    try {
+        const { username, password, returnTo } = req.body || {};
+        if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+        const user = users.find(u => u.username === username || u.email === username);
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        let validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword && process.env.NODE_ENV !== 'production' && process.env.DEFAULT_ADMIN_PASSWORD) {
+            if (password === process.env.DEFAULT_ADMIN_PASSWORD) validPassword = true;
+        }
+        if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
+
+        // Maintain server-side session too (optional but helpful for portal)
+        if (req.session) {
+            req.session.user = { id: user.id, username: user.username, role: user.role, email: user.email, name: user.name };
+        }
+
+        const token = issueSsoCookies(res, user);
+
+        // Validate returnTo for safety
+        const safeRt = (typeof returnTo === 'string' && /^https:\/\/(?:[\w-]+\.)*getsparqd\.com(?![^\s]*\s)/.test(returnTo)) ? returnTo : undefined;
+        res.json({ success: true, token, user: { id: user.id, username: user.username, email: user.email, role: user.role, name: user.name }, redirect: safeRt });
+    } catch (e) {
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// GET /api/auth/sso/me — verify cookie and return claims
+router.get('/sso/me', (req, res) => {
+    try {
+        const raw = (req.cookies && req.cookies['sparq_sso']) || (req.headers.cookie || '').split(/;\s*/).find(s => s.startsWith('sparq_sso='))?.split('=')[1];
+        if (!raw) return res.status(401).json({ error: 'No SSO cookie' });
+        const jwtSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
+        const payload = jwt.verify(raw, jwtSecret);
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ok: true, user: { id: payload.id, username: payload.username, email: payload.email, role: payload.role, name: payload.name } });
+    } catch (e) {
+        return res.status(401).json({ error: 'Invalid or expired SSO' });
+    }
+});
+
+// POST /api/auth/sso/logout — clear cookies (and session if present)
+router.post('/sso/logout', (req, res) => {
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+    const sameSite = 'lax';
+    // Clear cookies by setting empty value and immediate expiry
+    res.cookie?.('sparq_sso', '', { httpOnly: true, secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' });
+    try { res.append?.('Set-Cookie', cookie.serialize('role', '', { httpOnly: false, secure: !!secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' })); } catch(_){}
+    if (req.session) req.session.destroy(() => {});
+    res.json({ success: true });
+});
+
