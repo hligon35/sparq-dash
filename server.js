@@ -1183,9 +1183,10 @@ app.get('/api/sparqplug/url', authenticateToken, (req, res) => {
         const role = (req.user && req.user.role) || (req.session?.user?.role) || 'client';
         const rolePathMap = { admin: '/admin', manager: '/manager', client: '/client', user: '/client' };
         const pathPart = rolePathMap[role] || '/client';
-        const host = process.env.SPARGPLUG_HOST || 'sparqplug.getsparqd.com';
-        // Base path for the Next.js app (leave empty for root-mounted app)
-    let basePath = process.env.SPARGPLUG_BASE_PATH || '/app';
+        // Support multiple env var spellings; default to public hostname
+        const host = process.env.SPARGPLUG_HOST || process.env.SPARQPLUG_HOST || process.env.SPARQ_PLUG_HOST || 'sparqplug.getsparqd.com';
+        // Base path for the Next.js app; default to root (empty) to match deployment
+        let basePath = process.env.SPARGPLUG_BASE_PATH ?? process.env.SPARQPLUG_BASE_PATH ?? process.env.SPARQ_PLUG_BASE_PATH ?? '';
         if (basePath && basePath !== '/') {
             basePath = basePath.startsWith('/') ? basePath : '/' + basePath;
             basePath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
