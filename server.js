@@ -476,7 +476,7 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
         // Map may be { routes: { key: { to, cc, bcc, subject }, default: { ... } }, allowOrigins: [] }
         const routes = map.routes || {};
         const route = routes[routingKey] || routes['default'] || {};
-        const to = (process.env.CONTACT_DEFAULT_TO || route.to || process.env.EMAIL_TO || process.env.EMAIL_FROM || 'contact@getsparqd.com');
+    const to = (process.env.CONTACT_DEFAULT_TO || route.to || process.env.EMAIL_TO || process.env.EMAIL_FROM || 'hligon@getsparqd.com');
 
         // Optional CORS allowlist for unauthenticated POSTs
         const allow = (process.env.CONTACT_CORS_ORIGINS || (map.allowOrigins || []).join(',')).split(',').map(s=>s.trim()).filter(Boolean);
