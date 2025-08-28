@@ -34,6 +34,9 @@ const { router: authRouter, authenticateToken, checkPermission, ROLES, adminUser
 const app = express();
 const execAsync = promisify(exec);
 const PORT = process.env.PORT || 3003;
+// Package metadata (for version endpoint)
+let __pkg = { name: 'sparq-dash', version: '0.0.0' };
+try { __pkg = require('./package.json'); } catch(_) {}
 // Config persistence path (overrides legacy hardcoded path)
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'data', 'email-admin-config.json');
 const STORAGE_FILE = path.join(__dirname, 'data', 'storage-allocations.json');
@@ -1097,6 +1100,24 @@ app.get(['/login', '/login.html'], (req, res) => {
 // Simple health check
 app.get('/healthz', (req, res) => {
     res.json({ ok: true, service: 'email-admin', time: new Date().toISOString() });
+});
+
+// Version/build info for quick verification
+app.get('/api/version', (req, res) => {
+    res.json({
+        name: __pkg.name,
+        version: __pkg.version,
+        build: {
+            commit: process.env.BUILD_COMMIT || null,
+            time: process.env.BUILD_TIME || null
+        },
+        env: {
+            node: process.version,
+            nodeEnv: process.env.NODE_ENV || null,
+            port: PORT
+        },
+        uptimeSec: Math.round(process.uptime())
+    });
 });
 
 // API Routes (protected)
