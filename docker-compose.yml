@@ -12,6 +12,11 @@ services:
       - PORT=3003
       - REDIS_URL=redis://redis:6379
       - SESSION_SECRETS=change-me-1,change-me-2
+      - SESSION_DOMAIN=.getsparqd.com
+      - SSO_COOKIE_DOMAIN=.getsparqd.com
+      - SSO_JWT_SECRET=BBAD8vDX2H5F6Vkq5SbhCvTPbsRXmTsr
+      - SPARGPLUG_HOST=sparqplug.getsparqd.com
+      - SPARGPLUG_BASE_PATH=
       - CORS_ORIGINS=http://localhost:3003
     ports:
       - "3003:3003"

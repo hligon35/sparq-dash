@@ -1176,6 +1176,36 @@ app.get('/clients/export', authenticateToken, (req,res)=>{
     } catch(e){ res.status(500).end(''); }
 });
 
+// Compute SparQ Plug entry URL for the current user (used by portal UI to navigate)
+// Usage: GET /api/sparqplug/url -> { url, path, role }
+app.get('/api/sparqplug/url', authenticateToken, (req, res) => {
+    try {
+        const role = (req.user && req.user.role) || (req.session?.user?.role) || 'client';
+        const rolePathMap = { admin: '/admin', manager: '/manager', client: '/client', user: '/client' };
+        const pathPart = rolePathMap[role] || '/client';
+        const host = process.env.SPARGPLUG_HOST || 'sparqplug.getsparqd.com';
+        // Base path for the Next.js app (leave empty for root-mounted app)
+    let basePath = process.env.SPARGPLUG_BASE_PATH || '/app';
+        if (basePath && basePath !== '/') {
+            basePath = basePath.startsWith('/') ? basePath : '/' + basePath;
+            basePath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+        } else {
+            basePath = '';
+        }
+        const url = `https://${host}${basePath}${pathPart}`;
+        res.json({ url, path: pathPart, role });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to compute app URL' });
+    }
+});
+
+// Optional: just the role path
+app.get('/api/sparqplug/path', authenticateToken, (req, res) => {
+    const role = (req.user && req.user.role) || (req.session?.user?.role) || 'client';
+    const rolePathMap = { admin: '/admin', manager: '/manager', client: '/client', user: '/client' };
+    res.json({ path: rolePathMap[role] || '/client', role });
+});
+
 // Minimal webpage setup stub (dev-safe)
 app.post('/api/setup/webpage', authenticateToken, checkPermission('domains:create'), async (req, res) => {
     try {
