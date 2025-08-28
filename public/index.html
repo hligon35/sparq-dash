@@ -1,917 +1,229 @@
 <!DOCTYPE html>
 <html lang="en">
-                </script>
-        .status-offline { background: #dc3545; }
-        .stats-grid { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
-                </script>
-                        </div>
-                        <div id="sparqplug-frame-wrap" style="position:relative; width:100%; height:70vh; background:#f8f9fa; border:1px solid #e9ecef; border-radius:10px; overflow:hidden;">
-                            <div id="sparqplug-spinner" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:10px; color:#666;">
-                                <div style="width:14px; height:14px; border:3px solid #cfd4da; border-top-color:#1a78d8; border-radius:50%; animation: spin 1s linear infinite"></div>
-                                <span>Starting…</span>
-                            </div>
-                            <!-- Security: avoid allow-scripts + allow-same-origin combo to keep sandbox isolation -->
-                            <iframe id="sparqplug-iframe" title="SparQ Plug" style="border:0; width:100%; height:100%; background:#fff;" referrerpolicy="no-referrer-when-downgrade" sandbox="allow-scripts allow-forms allow-popups" src="about:blank"></iframe>
-                        </div>
-                        <div id="sparqplug-fallback" style="margin-top:12px; display:none;">
-                            <button class="btn btn-info" id="sparqplug-open-newtab">Open in new tab</button>
-                        </div>
-                    </div>
-                    <style>
-                        @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
-                    </style>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sparq Dashboard</title>
+    <script src="/portal/base-path.js"></script>
+    <link rel="stylesheet" href="/portal/sparq-colors.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fb; min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.05); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1a7ad9 0%, #0f5fb5 100%); color: #fff; padding: 24px; text-align: center; }
+        .header h1 { font-size: 2rem; margin-bottom: 6px; }
+        .header p { opacity: .95; }
+        .top-nav { display:flex; gap:8px; padding: 14px 18px; background:#fff; border-bottom:1px solid #e9ecef; align-items:center; flex-wrap:wrap; overflow-x:auto; justify-content:center; }
+        .top-nav .nav-item { display:inline-flex; align-items:center; padding:10px 14px; margin:6px 4px; font-size:.98em; white-space:nowrap; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#333; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:color .2s, background .2s, border-color .2s, transform .15s; cursor:pointer; }
+        .top-nav .nav-item:hover { background:#f8fafc; border-color:#cbd5e1; color:#111; transform: translateY(-1px); box-shadow:0 2px 4px rgba(0,0,0,.06); }
+        .top-nav .nav-item.active { background:#eff6ff; color:#1a7ad9; border-color:#1a7ad9; box-shadow:0 2px 6px rgba(26,120,216,.12); }
+        .section { display:none; padding: 20px; }
+        .section.active { display:block; }
+        .card { background:#fff; border-radius: 10px; padding: 18px; margin: 14px 0; box-shadow: 0 1px 3px rgba(0,0,0,.06); border:1px solid #eef1f4; }
+        .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 14px; margin: 12px 0; }
+        .stat-card { background: linear-gradient(135deg, #da0c43 0%, #e41854 50%, #1a7ad9 100%); color:#fff; padding: 20px; border-radius: 10px; text-align:center; }
+        .stat-number { font-size: 2.2em; font-weight: 800; margin-bottom: 6px; }
+        .stat-label { opacity: .95; }
+        .btn { background: #1a7ad9; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .btn:hover { filter: brightness(.95); }
+        .btn-info { background:#17a2b8; }
+        .btn-secondary { background:#6c757d; }
+        .contacts-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+        .contacts-input { flex:1; min-width:240px; padding:8px 10px; border:1px solid #e9ecef; border-radius:8px; }
+        .contacts-select { padding:8px 10px; border:1px solid #e9ecef; border-radius:8px; }
+        .contacts-table-wrap { overflow:auto; }
+        .contacts-table { width:100%; border-collapse:collapse; }
+        .contacts-head { text-align:left; border-bottom:1px solid #e9ecef; }
+        .contacts-cell { padding:8px 6px; }
+        .contacts-row { border-bottom:1px solid #f1f3f5; }
+        .muted { color:#666; }
+        .error { color:#c00; }
+        .row-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Sparq Dashboard</h1>
+            <p>Account Management</p>
+        </div>
+        <div class="top-nav">
+            <button class="nav-item active" data-target="dashboard">Dashboard</button>
+            <button class="nav-item" data-target="create-domain">Create Domain Email</button>
+            <button class="nav-item" data-target="manage-emails">Manage Emails</button>
+            <button class="nav-item" data-target="storage">Storage</button>
+            <button class="nav-item" data-target="dns-manager">DNS Manager</button>
+            <button class="nav-item" data-target="client-portal">Client Portal</button>
+            <button class="nav-item" data-target="system-logs">Debug Panel</button>
+            <button class="nav-item" data-target="contacts">Contact Submissions</button>
+            <button class="nav-item" data-target="settings">Settings</button>
+        </div>
+
+        <div class="content">
+            <div id="dashboard" class="section active">
+                <h2>System Overview</h2>
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-number" id="total-domains">0</div><div class="stat-label">Active Domains</div></div>
+                    <div class="stat-card"><div class="stat-number" id="total-emails">0</div><div class="stat-label">Email Accounts</div></div>
+                    <div class="stat-card"><div class="stat-number" id="storage-used">0GB</div><div class="stat-label">Storage Used</div></div>
+                    <div class="stat-card"><div class="stat-number" id="monthly-savings">$0</div><div class="stat-label">Monthly Savings</div></div>
                 </div>
-
-                <!-- Debug Panel (formerly System Logs) -->
-                <div id="system-logs" class="section">
-                    <h2>🛠️ Debug Panel</h2>
-
-                    <div class="card">
-                        <h3>🔎 Overview & Quick Checks</h3>
-                        <p style="margin-bottom:10px;color:#555">Run diagnostics to evaluate core services and surface likely issues with actionable fixes.</p>
-                        <div class="stats-grid" id="debug-status-grid">
-                            <div class="stat-card"><div class="stat-number" id="dbg-postfix">—</div><div class="stat-label">Postfix (SMTP)</div></div>
-                            <div class="stat-card"><div class="stat-number" id="dbg-dovecot">—</div><div class="stat-label">Dovecot (IMAP/SASL)</div></div>
-                            <div class="stat-card"><div class="stat-number" id="dbg-nginx">—</div><div class="stat-label">Nginx</div></div>
-                            <div class="stat-card"><div class="stat-number" id="dbg-dns">—</div><div class="stat-label">DNS</div></div>
-                        </div>
-                        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;">
-                            <button class="btn btn-info" onclick="runDiagnostics()">🧪 Run Diagnostics</button>
-                            <button class="btn btn-secondary" onclick="copyDiagnostics()">📋 Copy Report</button>
-                            <button class="btn" onclick="refreshLogs()">🔄 Refresh Logs</button>
-                        </div>
+                <div class="card">
+                    <h3>System Status</h3>
+                    <div class="stats-grid" id="debug-status-grid">
+                        <div class="stat-card"><div class="stat-number" id="dbg-postfix">—</div><div class="stat-label">Postfix (SMTP)</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg-dovecot">—</div><div class="stat-label">Dovecot (IMAP/SASL)</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg-nginx">—</div><div class="stat-label">Nginx</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg-dns">—</div><div class="stat-label">DNS</div></div>
                     </div>
-
-                    <div class="card">
-                        <h3>📝 Recent Activity</h3>
-                        <div id="system-log-entries"><!-- Log entries will be loaded here --></div>
-                    </div>
-
-                    <div class="card">
-                        <h3>🧰 Diagnostic Details</h3>
-                        <div id="diagnostic-results" style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height:1.5;">
-                            <em>Click “Run Diagnostics” to populate detailed results.</em>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3>📚 Common Issues and Fixes</h3>
-                        <ul style="margin-left:18px;">
-                            <li><strong>Login loop or 401 after login</strong><br>
-                                Reason: Cookie domain mismatch or Redis session not reachable.<br>
-                                Fix: Set SESSION_DOMAIN to your parent domain and ensure REDIS_URL is reachable (e.g., redis://127.0.0.1:6379).
-                            </li>
-                            <li style="margin-top:8px;"><strong>Website upload fails</strong><br>
-                                Reason: Upload middleware missing (multer) or target path not writable.<br>
-                                Fix: Install multer and ensure WEB_SITES_BASE exists and is writable by the portal user.
-                            </li>
-                            <li style="margin-top:8px;"><strong>Provisioned site not serving</strong><br>
-                                Reason: Nginx vhost invalid or not reloaded.<br>
-                                Fix: Validate with “nginx -t” and reload Nginx; verify Host header resolves to your server IP.
-                            </li>
-                            <li style="margin-top:8px;"><strong>SMTP send fails or submission (587) closed</strong><br>
-                                Reason: Postfix submission service not enabled or Dovecot SASL not available.<br>
-                                Fix: Ensure master.cf has a submission block and reload postfix; verify Dovecot auth sockets exist.
-                            </li>
-                            <li style="margin-top:8px;"><strong>Cloudflare DNS not created</strong><br>
-                                Reason: Zone not found for domain or missing API token/zone id.<br>
-                                Fix: Provide CLOUDFLARE_API_TOKEN and correct zone; prefer using explicit CLOUDFLARE_ZONE_ID.
-                            </li>
-                        </ul>
+                    <div class="row-actions">
+                        <button class="btn btn-info" id="btn-run-diagnostics">Run Diagnostics</button>
+                        <button class="btn btn-secondary" id="btn-copy-diagnostics">Copy Report</button>
+                        <button class="btn" id="btn-refresh-logs">Refresh Logs</button>
                     </div>
                 </div>
-                
-                <!-- Settings Section -->
-                <div id="settings" class="section">
-                    <h2>⚙️ System Settings</h2>
-                    <!-- Sub-navigation for Settings panes -->
-                    <div class="sub-nav" role="tablist" aria-label="Settings navigation">
-                        <button type="button" class="sub-item active" data-tab="profile" onclick="showSettingsTab && showSettingsTab('profile')">👤 Account</button>
-                        <button type="button" class="sub-item" data-tab="billing" onclick="showSettingsTab && showSettingsTab('billing')">💳 Billing</button>
-                        <button type="button" class="sub-item" data-tab="password" onclick="showSettingsTab && showSettingsTab('password')">🔒 Password</button>
-                        <button type="button" class="sub-item" data-tab="preferences" onclick="showSettingsTab && showSettingsTab('preferences')">🔔 Preferences</button>
-                        <button type="button" class="sub-item" data-tab="server" onclick="showSettingsTab && showSettingsTab('server')">🔧 Server</button>
+                <div class="card">
+                    <h3>Recent Activity</h3>
+                    <div id="system-log-entries"></div>
+                </div>
+                <div class="card">
+                    <h3>Diagnostic Details</h3>
+                    <div id="diagnostic-results"><em>Click “Run Diagnostics” to populate detailed results.</em></div>
+                </div>
+            </div>
+
+            <div id="system-logs" class="section">
+                <h2>Debug Panel</h2>
+                <div class="card">
+                    <h3>Overview & Quick Checks</h3>
+                    <p class="muted">Run diagnostics to evaluate core services and surface likely issues with actionable fixes.</p>
+                    <div class="stats-grid" id="debug-status-grid-2">
+                        <div class="stat-card"><div class="stat-number" id="dbg2-postfix">—</div><div class="stat-label">Postfix (SMTP)</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg2-dovecot">—</div><div class="stat-label">Dovecot (IMAP/SASL)</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg2-nginx">—</div><div class="stat-label">Nginx</div></div>
+                        <div class="stat-card"><div class="stat-number" id="dbg2-dns">—</div><div class="stat-label">DNS</div></div>
                     </div>
-
-                    <!-- Server Config Pane -->
-                    <div id="settings-server" class="settings-pane">
-                        <div class="card">
-                            <h3>🔧 Email Server Configuration</h3>
-                            <div class="form-group">
-                                <label>Server IP</label>
-                                <input type="text" value="68.54.208.207" readonly>
-                            </div>
-                            <div class="form-group">
-                                <label>Default Storage per Domain</label>
-                                <select>
-                                    <option value="25" selected>25GB</option>
-                                    <option value="50">50GB</option>
-                                    <option value="100">100GB</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Auto-generate Password Length</label>
-                                <input type="number" value="12" min="8" max="32">
-                            </div>
-                            <button class="btn btn-success">💾 Save Settings</button>
-                        </div>
+                    <div class="row-actions">
+                        <button class="btn btn-info" onclick="runDiagnostics()">Run Diagnostics</button>
+                        <button class="btn btn-secondary" onclick="copyDiagnostics()">Copy Report</button>
+                        <button class="btn" onclick="window.refreshLogs && window.refreshLogs()">Refresh Logs</button>
                     </div>
+                </div>
+                <div class="card">
+                    <h3>Diagnostic Details</h3>
+                    <div id="diagnostic-results-2" class="muted"><em>Use the controls above to run checks.</em></div>
+                </div>
+            </div>
 
-                    <!-- Profile Pane -->
-                    <div id="settings-profile" class="settings-pane active">
-                        <div class="card">
-                            <h3>👤 Account Profile</h3>
-                            <div id="acct-profile-status" class="alert-info" style="display:none;" aria-live="polite"></div>
-                            <div class="form-group"><label>Full Name</label><input id="acct-fullname" type="text" placeholder="Your full name"></div>
-                            <div class="form-group"><label>Email</label><input id="acct-email" type="email" placeholder="you@example.com" readonly></div>
-                            <!-- SparQy launcher button; shared widget will handle panel UI -->
-                            <div id="sparq-plug-launcher" style="position: fixed; right: 40px; bottom: 20px; z-index: 9999;">
-                                <button id="open-sparq-plug" style="background: var(--gradient-primary); color: white; border: none; padding: 12px 16px; border-radius: 999px; box-shadow: 0 8px 20px rgba(0,0,0,.15); font-weight: 700; cursor: pointer;">
-                                    Need Help?
-                                </button>
-                                <a href="#" style="display:none; text-align:center; margin-top:8px; color:#1a7ad9; font-weight:600; text-decoration:none;">Open Full App</a>
-                            </div>
-                            row('Nginx', results.nginx.ok, results.nginx.reason, results.nginx.fix, results.nginx.extra);
-                            row('DNS', results.dns.ok, results.dns.reason, results.dns.fix, results.dns.extra);
-                            if (results.portal) row('Portal', results.portal.ok, results.portal.reason, results.portal.fix, results.portal.extra);
-                            wrap.innerHTML = rows.join('');
-                        }
+            <div id="contacts" class="section">
+                <h2>Contact Submissions</h2>
+                <div class="card">
+                    <div class="contacts-toolbar">
+                        <input id="contacts-filter" class="contacts-input" placeholder="Filter by site, email, subject, IP" />
+                        <select id="contacts-limit" class="contacts-select" title="Result limit">
+                            <option value="50">Last 50</option>
+                            <option value="100">Last 100</option>
+                            <option value="200" selected>Last 200</option>
+                            <option value="500">Last 500</option>
+                        </select>
+                        <button class="btn" id="contacts-refresh">Refresh</button>
+                    </div>
+                    <div class="contacts-table-wrap">
+                        <table class="contacts-table">
+                            <thead>
+                                <tr class="contacts-head">
+                                    <th class="contacts-cell">When</th>
+                                    <th class="contacts-cell">Site</th>
+                                    <th class="contacts-cell">From</th>
+                                    <th class="contacts-cell">Email</th>
+                                    <th class="contacts-cell">Subject</th>
+                                    <th class="contacts-cell">To</th>
+                                    <th class="contacts-cell">IP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="contacts-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
-                        async function runDiagnostics(){
-                            // Gather health from candidates and infer reasons/fixes
-                            const results = { postfix:{ok:false}, dovecot:{ok:false}, nginx:{ok:false}, dns:{ok:false}, portal:{ok:true} };
-                            try {
-                                const h = await fetchJSONCandidates(['/healthz','/api/health','/gateway/health','/api/sparqy/health']);
-                                const val = (k, def=false)=> (typeof h?.[k] === 'boolean')? h[k] : def;
-                                results.postfix.ok = val('postfix', true);
-                                results.dovecot.ok = val('dovecot', true);
-                                results.nginx.ok = val('nginx', true);
-                                const dnsOk = (h && h.dns && typeof h.dns.ok==='boolean') ? h.dns.ok : val('dns', true);
-                                results.dns.ok = dnsOk;
-                            } catch(_){
-                                results.portal = { ok:false, reason:'Portal health endpoint not reachable', fix:'Ensure portal is running and reverse proxy forwards /healthz.' };
-                            }
+            <div id="settings" class="section">
+                <h2>System Settings</h2>
+                <div class="card">
+                    <h3>Email Server Configuration</h3>
+                    <div class="stats-grid" aria-label="Server configuration">
+                        <label class="card">
+                            <span>Server IP</span>
+                            <input type="text" value="68.54.208.207" readonly title="Server IP" />
+                        </label>
+                        <label class="card">
+                            <span>Default Storage per Domain</span>
+                            <select title="Default storage per domain">
+                                <option value="25" selected>25GB</option>
+                                <option value="50">50GB</option>
+                                <option value="100">100GB</option>
+                            </select>
+                        </label>
+                        <label class="card">
+                            <span>Auto-generate Password Length</span>
+                            <input type="number" value="12" min="8" max="32" title="Password length" />
+                        </label>
+                    </div>
+                    <div class="row-actions"><button class="btn btn-success">Save Settings</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                            // Derive reasons/fixes
-                            if (!results.postfix.ok){
-                                results.postfix.reason = 'SMTP service not responding or submission not enabled';
-                                results.postfix.fix = 'Check master.cf submission service and reload postfix; verify ports 25/587 are listening.';
-                            }
-                            if (!results.dovecot.ok){
-                                results.dovecot.reason = 'IMAP/SASL auth not available';
-                                results.dovecot.fix = 'Ensure Dovecot is running and auth sockets exist in /var/run/dovecot/.';
-                            }
-                            if (!results.nginx.ok){
-                                results.nginx.reason = 'Web server not reachable or config invalid';
-                                results.nginx.fix = 'Run nginx -t and reload; verify vhost and upstream routes.';
-                            }
-                            if (!results.dns.ok){
-                                results.dns.reason = 'DNS resolution failing or zone missing';
-                                results.dns.fix = 'Check A/MX records and Cloudflare zone; ensure correct public IP.';
-                            }
-
-                            // Update overview tiles
-                            setDbg('dbg-postfix', !!results.postfix.ok);
-                            setDbg('dbg-dovecot', !!results.dovecot.ok);
-                            setDbg('dbg-nginx', !!results.nginx.ok);
-                            setDbg('dbg-dns', !!results.dns.ok);
-                            renderDiagnostic(results);
-                        }
-
-                        async function copyDiagnostics(){
-                            try {
-                                const el = document.getElementById('diagnostic-results');
-                                const text = el ? el.innerText : 'No diagnostics yet.';
-                                await navigator.clipboard.writeText(text);
-                                alert('Diagnostics copied to clipboard');
-                            } catch(_){ alert('Could not copy diagnostics'); }
-                        }
-
-                        function schedule(){
-                            loadStats();
-                            loadHealth();
-                            loadLogs();
-                            // Auto-refresh every 30s while dashboard visible
-                            setInterval(()=>{
-                                const dash = document.getElementById('dashboard');
-                                if (dash && dash.classList.contains('active')){
-                                    loadStats();
-                                    loadHealth();
-                                }
-                            }, 30000);
-                        }
-
-                        // Hook refresh buttons if present
-                        window.refreshLogs = loadLogs;
-                        window.runDiagnostics = runDiagnostics;
-                        window.copyDiagnostics = copyDiagnostics;
-                        // Kick on DOM ready
-                        if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', schedule);
-                        } else {
-                            schedule();
-                        }
-                    })();
-                </script>
-                <script>
-                    // Webpage setup: populate pools and submit form
-                    (function(){
-                        const $ = id => document.getElementById(id);
-
-                        async function fetchJSONCandidates(paths){
-                            const cands = [];
-                            paths.forEach(p=>{
-                                const clean = p.startsWith('/') ? p : '/' + p;
-                                cands.push(clean);
-                                if (!clean.startsWith('/portal/')) cands.push('/portal' + clean);
-                                try { if (typeof window.__withBase__==='function') cands.push(window.__withBase__(clean.replace(/^\//,''))); } catch(_){ }
-                            });
-                            let lastErr;
-                            for (const url of cands){
-                                try {
-                                    const r = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
-                                    if (r.ok) return r.json();
-                                    lastErr = new Error('HTTP ' + r.status);
-                                } catch(e){ lastErr = e; }
-                            }
-                            throw lastErr || new Error('All candidates failed');
-                        }
-
-                        async function loadPools(){
-                            const sel = $('webpage-pool');
-                            sel.innerHTML = '<option value="">(loading pools...)</option>';
-                            try {
-                                const data = await fetchJSONCandidates(['/api/storage/summary','/api/portal/storage/summary']);
-                                const pools = data && data.pools ? data.pools : (data.plannedAllocation ? data.plannedAllocation : null);
-                                sel.innerHTML = '';
-                                if (pools && Array.isArray(pools)){
-                                    pools.forEach(p => {
-                                        const opt = document.createElement('option');
-                                        opt.value = p.name || p.key || JSON.stringify(p);
-                                        opt.textContent = `${p.name || p.key} — ${p.sizeGB || p.size || (p.bytes ? (p.bytes/1e9).toFixed(2) + 'GB' : '')}`;
-                                        sel.appendChild(opt);
-                                    });
-                                } else {
-                                    const opt = document.createElement('option'); opt.value='default'; opt.textContent='default'; sel.appendChild(opt);
-                                }
-                            } catch(e){
-                                sel.innerHTML = '<option value="default">default</option>';
-                            }
-                        }
-
-                        // Sends either JSON or multipart/form-data depending on presence of a file
-                        async function postCandidates(path, body, file){
-                            const clean = path.startsWith('/') ? path : '/' + path;
-                            const noSlash = clean.replace(/^\//,'');
-                            const cands = [clean];
-                            if (!clean.startsWith('/portal/')) cands.push('/portal/' + noSlash);
-    
-            }
-            function addSources(sources) {
-                if (!sources || !sources.length) return;
-                const wrap = document.createElement('div');
-                wrap.style.margin = '4px 0 10px 0';
-                wrap.style.display = 'flex';
-                wrap.style.justifyContent = 'flex-start';
-                const box = document.createElement('div');
-                box.style.maxWidth = '80%';
-                box.style.padding = '8px 10px';
-                box.style.borderRadius = '10px';
-                box.style.background = '#f1f3f5';
-                box.style.color = '#333';
-                const ul = document.createElement('ul');
-                ul.style.margin = '0'; ul.style.padding = '0 0 0 18px'; ul.style.fontSize = '12px';
-                const title = document.createElement('div');
-                title.textContent = 'Sources:'; title.style.fontWeight = '600'; title.style.marginBottom = '4px';
-                box.appendChild(title);
-                sources.slice(0,3).forEach(s => {
-                    const li = document.createElement('li');
-                    const a = document.createElement('a');
-                    a.href = s.link || '#'; a.textContent = s.title || s.displayLink || 'link'; a.target = '_blank'; a.rel = 'noopener';
-                    li.appendChild(a);
-                    ul.appendChild(li);
-                });
-                box.appendChild(ul);
-                wrap.appendChild(box);
-                messagesEl.appendChild(wrap);
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-            }
-            function addTyping() {
-                const id = 'sparqy-typing';
-                if (document.getElementById(id)) return id;
-                const wrap = document.createElement('div');
-                wrap.id = id;
-                wrap.style.margin = '8px 0';
-                wrap.style.display = 'flex';
-                wrap.style.justifyContent = 'flex-start';
-                const bubble = document.createElement('div');
-                bubble.style.maxWidth = '80%';
-                bubble.style.padding = '10px 12px';
-                bubble.style.borderRadius = '12px';
-                bubble.style.boxShadow = '0 1px 2px rgba(0,0,0,.06)';
-                bubble.style.background = '#ffffff';
-                bubble.style.color = '#333';
-                bubble.textContent = 'SparQy is typing…';
-                wrap.appendChild(bubble);
-                messagesEl.appendChild(wrap);
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-                return id;
-            }
-            function removeTyping() {
-                const el = document.getElementById('sparqy-typing');
-                if (el) el.remove();
-            }
-            let sparqyNotFoundNotified = false;
-            async function loadHistory(){
-                try {
-                    // quick health check to surface status
-                    try {
-                        const h = await fetchSparqy('/api/sparqy/health', { credentials: 'include' });
-                        if (h.ok) {
-                            const hj = await h.json();
-                            if (hj && hj.ok) {
-                                // no-op; could display status if desired
-                            }
-                        }
-                    } catch(_){}
-                    const r = await fetchSparqy('/api/sparqy/history', { credentials: 'include' });
-                    if (!r.ok) {
-                        if (r.status === 401) {
-                            addMsg('assistant', 'You’re not signed in. Please log in again.');
-                        } else if (r.status === 404 && !sparqyNotFoundNotified) {
-                            sparqyNotFoundNotified = true;
-                            addMsg('assistant', 'SparQy service not found (404). Try refreshing the page or restarting the portal service to apply updates.');
-                        }
-                        return;
-                    }
-                    const data = await r.json().catch(async ()=>({ messages: [] }));
-                    messagesEl.innerHTML = '';
-                    (data.messages || []).forEach(m => addMsg(m.role, m.content));
-                } catch(e) {}
-            }
-            async function sendMessage(text){
-                addMsg('user', text);
-                addTyping();
-                try {
-            const r = await fetchSparqy('/api/sparqy/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ message: text })
-                    });
-                    if (!r.ok) {
-                        if (r.status === 401) {
-                            removeTyping();
-                            addMsg('assistant', 'Session expired. Please sign in again.');
-                            return;
-                        } else if (r.status === 404 && !sparqyNotFoundNotified) {
-                            sparqyNotFoundNotified = true;
-                            removeTyping();
-                            addMsg('assistant', 'SparQy service not found (404). Try refreshing the page or restarting the portal service to apply updates.');
-                            return;
-                        }
-                        let txt;
-                        try { txt = await r.text(); } catch(_) { txt = ''; }
-                        removeTyping();
-                        addMsg('assistant', 'Error: ' + (txt || r.statusText || 'Request failed'));
-                        return;
-                    }
-                    let data;
-                    try {
-                        data = await r.json();
-                    } catch(_) {
-                        removeTyping();
-                        addMsg('assistant', 'Received an unexpected response.');
-                        return;
-                    }
-                    const reply = (data && data.reply) || '…';
-                    removeTyping();
-                    addMsg('assistant', reply);
-                    if (data && Array.isArray(data.sources) && data.sources.length) {
-                        addSources(data.sources);
-                    }
-                } catch(e) {
-                    removeTyping();
-                    addMsg('assistant', 'Network error. Please check connection and try again.');
-                }
-            }
-
-            openBtn?.addEventListener('click', ()=> {
-                panel.style.display = 'block';
-                loadHistory();
-                input?.focus();
-            });
-            closeBtn?.addEventListener('click', ()=> panel.style.display = 'none');
-            form?.addEventListener('submit', (e)=>{
-                e.preventDefault();
-                const text = (input?.value || '').trim();
-                if (!text) return;
-                input.value = '';
-                if (sending) return; // prevent spamming
-                sending = true;
-                sendMessage(text).finally(()=>{ sending = false; input?.focus(); });
-            });
-            // Enter to send, Shift+Enter for newline
-            input?.addEventListener('keydown', (e)=>{
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    form?.dispatchEvent(new Event('submit'));
-                }
-            });
-            clearBtn?.addEventListener('click', async ()=>{
-                try {
-                    const r = await fetchSparqy('/api/sparqy/clear', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ threadId: 'default' })
-                    });
-                    if (r.ok) {
-                        messagesEl.innerHTML = '';
-                        // Reload history to seed greeting
-                        loadHistory();
-                    }
-                } catch(_){}
-            });
-        })();
-    </script>
-    <script>
-        // Portal UX helpers and fallbacks for live data, only define if not already provided by admin-dashboard.js
-        (function(){
-            const $ = (id) => document.getElementById(id);
-            // Settings sub-navigation controller
-            function showSettingsTab(which){
-                const map = { profile:'settings-profile', billing:'settings-billing', password:'settings-password', preferences:'settings-preferences', server:'settings-server' };
-                // panes
-                Object.values(map).forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('active'); });
-                const target = document.getElementById(map[which]); if (target) target.classList.add('active');
-                // buttons
-                const btns = document.querySelectorAll('#settings .sub-nav .sub-item');
-                btns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
-                const activeBtn = document.querySelector(`#settings .sub-nav .sub-item[data-tab="${which}"]`);
-                if (activeBtn) { activeBtn.classList.add('active'); activeBtn.setAttribute('aria-selected','true'); }
-                // lazy load content
-                try {
-                    if (which === 'profile') loadAccountProfile();
-                    if (which === 'billing') loadBilling();
-                    if (which === 'preferences') loadPreferences();
-                } catch(_){}
-            }
-            window.showSettingsTab = showSettingsTab;
-            // Delegate clicks to support dynamically-added buttons or if inline handlers fail
-            document.addEventListener('click', (e)=>{
-                const t = e.target;
-                if (!t || !(t.closest)) return;
-                const btn = t.closest('#settings .sub-nav .sub-item');
-                if (btn && btn.getAttribute('data-tab')){
-                    e.preventDefault();
-                    const which = btn.getAttribute('data-tab');
-                    showSettingsTab(which);
-                }
-            });
-            function candidateFetch(paths, init){
-                const cands = [];
-                paths.forEach(p=>{
-                    const clean = p.startsWith('/')? p : '/' + p;
-                    cands.push(clean);
-                    if (!clean.startsWith('/portal/')) cands.push('/portal' + clean);
-                    try { if (typeof window.__withBase__==='function') cands.push(window.__withBase__(clean.replace(/^\//,''))); } catch(_){ }
-                });
-                let lastErr;
-                return (async ()=>{
-                    for (const url of cands){
-                        try { const r = await fetch(url, init); if (r.ok) return r; lastErr = new Error('HTTP ' + r.status); } catch(e){ lastErr = e; }
-                    }
-                    throw lastErr || new Error('All candidates failed');
-                })();
-            }
-
-                        async function loadStorage(){
-                try {
-                    const r = await candidateFetch(['/api/storage/summary','/api/storage','/metrics/storage']);
-                    const data = await r.json();
-                    if (data){
-                        const total = Number(data.totalGB) || (Number(data.availableGB) + Number(data.allocatedGB));
-                        if (Number.isFinite(total)) $('total-storage').textContent = (total >= 1024 ? (total/1024).toFixed(1)+'TB' : total+'GB');
-                        if (Number.isFinite(data.availableGB)) $('available-storage').textContent = data.availableGB + 'GB';
-                        if (Number.isFinite(data.allocatedGB)) $('allocated-storage').textContent = data.allocatedGB + 'GB';
-                        const usedPct = total ? Math.min(100, Math.max(0, (Number(data.allocatedGB) / total) * 100)) : 0;
-                        const bar = document.querySelector('#storage .progress-fill'); if (bar) bar.style.width = usedPct.toFixed(1) + '%';
-                        // Pools rendering
-                        const pools = data.pools || {};
-                        const poolEl = $('storage-pools');
-                        if (poolEl && pools){
-                            poolEl.innerHTML = '';
-                            const items = [
-                                { key: 'email', label: 'Email', cap: pools.email?.capacityGB, used: (pools.email?.allocatedGB ?? pools.email?.usedGB) },
-                                { key: 'web', label: 'Web Hosting', cap: pools.web?.capacityGB, used: pools.web?.usedGB },
-                                { key: 'content', label: 'Content Storage', cap: pools.content?.capacityGB, used: pools.content?.usedGB },
-                                { key: 'reserve', label: 'System Reserve', cap: pools.reserve?.capacityGB, used: 0 }
-                            ];
-                            items.forEach(it => {
-                                if (it.cap == null) return;
-                                const row = document.createElement('div');
-                                row.className = 'email-item';
-                                const used = Number(it.used)||0;
-                                const pct = it.cap ? Math.min(100, Math.max(0, (used/it.cap)*100)) : 0;
-                                row.innerHTML = `<div class="email-info"><strong>${it.label}</strong><br><small>${used}GB / ${it.cap}GB (${pct.toFixed(1)}%)</small></div>`;
-                                poolEl.appendChild(row);
-                            });
-                        }
-                        const list = $('domain-storage-list');
-                        if (list && Array.isArray(data.domains)){
-                            list.innerHTML = '';
-                            data.domains.forEach(d => {
-                                const row = document.createElement('div');
-                                row.className = 'email-item';
-                                row.innerHTML = `<div class="email-info"><strong>${d.domain||'domain'}</strong><br><small>Allocated: ${d.allocatedGB||0}GB · Used: ${d.usedGB||0}GB</small></div>`;
-                                list.appendChild(row);
-                            });
-                        }
-                    }
-                } catch(_){ /* ignore in UI */ }
-            }
-
-            async function refreshEmailList(){
-                try {
-                    const r = await candidateFetch(['/api/emails','/api/email/accounts']);
-                    const data = await r.json();
-                    const container = $('email-list'); if (!container) return;
-                    const items = Array.isArray(data) ? data : (Array.isArray(data?.accounts) ? data.accounts : []);
-                    if (!items.length) return; // keep seed examples if empty
-                    container.innerHTML = '';
-                    items.forEach(u => {
-                        const row = document.createElement('div');
-                        row.className = 'email-item';
-                        const email = u.email || u.address || '';
-                        const last = u.lastLogin || u.last_seen || '';
-                        const role = u.role || u.type || 'User';
-                        row.innerHTML = `<div class="email-info"><strong>${email}</strong><br><small>${role} - Last login: ${last||'n/a'}</small></div>
-                            <div class="email-actions">
-                                <button class="btn btn-sm btn-primary" onclick="openWebmailForEmail('${email}')">🔑 Login</button>
-                                <button class="btn btn-sm btn-info" onclick="resetPassword('${email}')">🔄 Reset</button>
-                            </div>`;
-                        container.appendChild(row);
-                    });
-                } catch(_){ }
-            }
-
-            async function createNewEmailAccount(){
-                const email = prompt('Enter new email (e.g., user@domain.com):');
-                if (!email) return;
-                try {
-                    const r = await candidateFetch(['/api/emails','/api/email/create'], { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email })});
-                    if (r.ok) { alert('Created: ' + email); refreshEmailList(); } else { alert('Failed to create ('+r.status+').'); }
-                } catch(e){ alert('Network error creating email.'); }
-            }
-
-            function openWebmailForEmail(email){
-                const domain = (email||'').split('@')[1];
-                if (!domain) return;
-                const url = 'https://mail.' + domain;
-                window.open(url, '_blank','noopener');
-            }
-            function accessMelaWebmail(){ window.open('https://mail.melawholefoodsva.com','_blank','noopener'); }
-            function openWebmailPrompt(){ const d = prompt('Enter domain (e.g., example.com):'); if (d) window.open('https://mail.'+d,'_blank','noopener'); }
-            function openEmailManager(){ window.open('/portal/email/admin','_blank','noopener'); }
-            async function resetPassword(email){
-                if (!email) return;
-                if (!confirm('Reset password for ' + email + '?')) return;
-                try {
-                    const r = await candidateFetch(['/api/emails/reset','/api/email/reset'], { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email })});
-                    alert(r.ok ? 'Password reset link sent' : 'Reset failed ('+r.status+').');
-                } catch(_){ alert('Network error resetting password'); }
-            }
-            function manageAlias(alias){ alert('Alias manager not yet implemented for '+alias); }
-
-            async function testDNS(){
-                try {
-                    const r = await candidateFetch(['/api/dns/test','/dns/test']);
-                    const data = await r.json();
-                    alert('DNS test: ' + (data.ok ? 'OK' : 'Issues found'));
-                } catch(_){ alert('DNS test endpoint not available'); }
-            }
-
-            function showUserTab(which){
-                const tabs = ['admin-users','managers','clients','add-user'];
-                tabs.forEach(t => { const el = $(t+'-tab'); if (el) el.style.display = (t===which)? 'block':'none'; });
-            }
-            async function loadClientsList(){
-                try {
-                    const r = await candidateFetch(['/api/clients','/clients']);
-                    const data = await r.json();
-                    const list = $('clients-list'); if (!list) return;
-                    list.innerHTML = '';
-                    const items = Array.isArray(data) ? data : (Array.isArray(data?.clients) ? data.clients : []);
-                    items.forEach(c => {
-                        const div = document.createElement('div');
-                        div.className = 'email-item';
-                        div.innerHTML = `<div class="email-info"><strong>${c.name||c.company||c.email||'Client'}</strong><br><small>${c.domain||''}</small></div>`;
-                        list.appendChild(div);
-                    });
-                } catch(_){ }
-            }
-            async function exportClientsData(){
-                try {
-                    const r = await candidateFetch(['/api/clients/export','/clients/export']);
-                    const blob = await r.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = 'clients.csv'; a.click();
-                    setTimeout(()=> URL.revokeObjectURL(url), 2000);
-                } catch(_){ alert('Export failed'); }
-            }
-
-            // Settings: Account/Billing/Password/Preferences
-            async function loadAccountProfile(){
-                try {
-                    const r = await candidateFetch(['/api/user/me','/api/account/me','/user/me']);
-                    if (!r.ok) return;
-                    const u = await r.json();
-                    { const el = $('#acct-fullname'); if (el) el.value = u.name || u.fullname || ''; }
-                    { const el = $('#acct-email'); if (el) el.value = u.email || ''; }
-                    { const el = $('#acct-phone'); if (el) el.value = u.phone || ''; }
-                    { const el = $('#acct-timezone'); if (el) el.value = u.timezone || ''; }
-                    { const el = $('#addr-line1'); if (el) el.value = u.address?.line1 || ''; }
-                    { const el = $('#addr-line2'); if (el) el.value = u.address?.line2 || ''; }
-                    { const el = $('#addr-city'); if (el) el.value = u.address?.city || ''; }
-                    { const el = $('#addr-state'); if (el) el.value = u.address?.state || ''; }
-                    { const el = $('#addr-zip'); if (el) el.value = u.address?.zip || ''; }
-                    { const el = $('#addr-country'); if (el) el.value = u.address?.country || ''; }
-                } catch(_){ /* ignore */ }
-            }
-            async function saveAccountProfile(){
-                const payload = {
-                    name: $('#acct-fullname')?.value || '',
-                    phone: $('#acct-phone')?.value || '',
-                    timezone: $('#acct-timezone')?.value || '',
-                    address: {
-                        line1: $('#addr-line1')?.value || '',
-                        line2: $('#addr-line2')?.value || '',
-                        city: $('#addr-city')?.value || '',
-                        state: $('#addr-state')?.value || '',
-                        zip: $('#addr-zip')?.value || '',
-                        country: $('#addr-country')?.value || ''
-                    }
-                };
-                const status = $('#acct-profile-status');
-                try {
-                    const r = await candidateFetch(['/api/user/me','/api/account/update','/user/update'], { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                    if (status) { status.className = r.ok ? 'alert-success' : 'alert-error'; status.style.display='block'; status.textContent = r.ok ? 'Profile saved' : 'Save failed'; }
-                } catch(_) { if (status){ status.className='alert-error'; status.style.display='block'; status.textContent='Network error'; } }
-            }
-
-            async function loadBilling(){
-                try {
-                    const r = await candidateFetch(['/api/billing','/api/account/billing','/billing']);
-                    if (!r.ok) return;
-                    const b = await r.json();
-                    if (b){
-                        { const el = $('#bill-company'); if (el) el.value = b.company || ''; }
-                        { const el = $('#bill-email'); if (el) el.value = b.email || b.billingEmail || ''; }
-                        { const el = $('#bill-phone'); if (el) el.value = b.phone || b.billingPhone || ''; }
-                        { const el = $('#bill-taxid'); if (el) el.value = b.taxId || ''; }
-                        { const el = $('#bill-same-mailing'); if (el) el.checked = !!b.sameAsMailing; }
-                        const a = b.address || {};
-                        { const el = $('#bill-line1'); if (el) el.value = a.line1 || ''; }
-                        { const el = $('#bill-line2'); if (el) el.value = a.line2 || ''; }
-                        { const el = $('#bill-city'); if (el) el.value = a.city || ''; }
-                        { const el = $('#bill-state'); if (el) el.value = a.state || ''; }
-                        { const el = $('#bill-zip'); if (el) el.value = a.zip || ''; }
-                        { const el = $('#bill-country'); if (el) el.value = a.country || ''; }
-                    }
-                } catch(_){ }
-            }
-            async function saveBilling(){
-                const status = $('#billing-status');
-                const same = $('#bill-same-mailing')?.checked;
-                const payload = {
-                    company: $('#bill-company')?.value || '',
-                    email: $('#bill-email')?.value || '',
-                    phone: $('#bill-phone')?.value || '',
-                    taxId: $('#bill-taxid')?.value || '',
-                    address: same ? {
-                        line1: $('#addr-line1')?.value || '',
-                        line2: $('#addr-line2')?.value || '',
-                        city: $('#addr-city')?.value || '',
-                        state: $('#addr-state')?.value || '',
-                        zip: $('#addr-zip')?.value || '',
-                        country: $('#addr-country')?.value || ''
-                    } : {
-                        line1: $('#bill-line1')?.value || '',
-                        line2: $('#bill-line2')?.value || '',
-                        city: $('#bill-city')?.value || '',
-                        state: $('#bill-state')?.value || '',
-                        zip: $('#bill-zip')?.value || '',
-                        country: $('#bill-country')?.value || ''
-                    }
-                };
-                try {
-                    const r = await candidateFetch(['/api/billing','/api/account/billing','/billing'], { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                    if (status) { status.className = r.ok ? 'alert-success' : 'alert-error'; status.style.display='block'; status.textContent = r.ok ? 'Billing saved' : 'Save failed'; }
-                } catch(_) { if (status){ status.className='alert-error'; status.style.display='block'; status.textContent='Network error'; } }
-            }
-
-            async function changePassword(){
-                const status = $('#password-status');
-                const cur = $('#pwd-current')?.value || '';
-                const n1 = $('#pwd-new')?.value || '';
-                const n2 = $('#pwd-confirm')?.value || '';
-                if (!n1 || n1 !== n2){ if (status){ status.className='alert-error'; status.style.display='block'; status.textContent='Passwords do not match'; } return; }
-                try {
-                    const r = await candidateFetch(['/api/account/password','/api/user/password','/user/password'], { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ current: cur, password: n1 }) });
-                    if (status) { status.className = r.ok ? 'alert-success' : 'alert-error'; status.style.display='block'; status.textContent = r.ok ? 'Password updated' : 'Update failed'; }
-                } catch(_) { if (status){ status.className='alert-error'; status.style.display='block'; status.textContent='Network error'; } }
-            }
-
-            async function loadPreferences(){
-                try {
-                    const r = await candidateFetch(['/api/account/preferences','/api/user/preferences','/user/preferences']);
-                    if (!r.ok) return;
-                    const p = await r.json();
-                    if (p){
-                        { const el = $('#pref-emails'); if (el) el.checked = !!(p.emails ?? true); }
-                        { const el = $('#pref-security'); if (el) el.checked = !!(p.security ?? true); }
-                        { const el = $('#pref-updates'); if (el) el.checked = !!(p.updates ?? false); }
-                    }
-                } catch(_){ }
-            }
-            async function savePreferences(){
-                const status = $('#prefs-status');
-                const payload = {
-                    emails: !!($('#pref-emails')?.checked),
-                    security: !!($('#pref-security')?.checked),
-                    updates: !!($('#pref-updates')?.checked)
-                };
-                try {
-                    const r = await candidateFetch(['/api/account/preferences','/api/user/preferences','/user/preferences'], { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                    if (status) { status.className = r.ok ? 'alert-success' : 'alert-error'; status.style.display='block'; status.textContent = r.ok ? 'Preferences saved' : 'Save failed'; }
-                } catch(_){ if (status){ status.className='alert-error'; status.style.display='block'; status.textContent='Network error'; } }
-            }
-
-            // Only attach to window if not already defined elsewhere
-            if (typeof window.refreshEmailList !== 'function') window.refreshEmailList = refreshEmailList;
-            if (typeof window.createNewEmailAccount !== 'function') window.createNewEmailAccount = createNewEmailAccount;
-            if (typeof window.openWebmailForEmail !== 'function') window.openWebmailForEmail = openWebmailForEmail;
-            if (typeof window.accessMelaWebmail !== 'function') window.accessMelaWebmail = accessMelaWebmail;
-            if (typeof window.openWebmailPrompt !== 'function') window.openWebmailPrompt = openWebmailPrompt;
-            if (typeof window.openEmailManager !== 'function') window.openEmailManager = openEmailManager;
-            if (typeof window.resetPassword !== 'function') window.resetPassword = resetPassword;
-            if (typeof window.manageAlias !== 'function') window.manageAlias = manageAlias;
-            if (typeof window.testDNS !== 'function') window.testDNS = testDNS;
-            if (typeof window.showUserTab !== 'function') window.showUserTab = showUserTab;
-            if (typeof window.loadClientsList !== 'function') window.loadClientsList = loadClientsList;
-            if (typeof window.exportClientsData !== 'function') window.exportClientsData = exportClientsData;
-
-            // Settings bindings
-            if (typeof window.saveAccountProfile !== 'function') window.saveAccountProfile = saveAccountProfile;
-            if (typeof window.saveBilling !== 'function') window.saveBilling = saveBilling;
-            if (typeof window.changePassword !== 'function') window.changePassword = changePassword;
-            if (typeof window.savePreferences !== 'function') window.savePreferences = savePreferences;
-
-            // On load, refresh storage section once
-            function initSettingsTabs(){
-                // Normalize initial state: ensure only the default pane is active
-                showSettingsTab('profile');
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', ()=>{ loadStorage(); loadAccountProfile(); loadPreferences(); initSettingsTabs(); });
-            } else { loadStorage(); loadAccountProfile(); loadPreferences(); initSettingsTabs(); }
-        })();
-    </script>
+    <script src="/portal/admin-dashboard.js"></script>
+    <script src="/portal/shared-header-nav.js"></script>
     <script src="/portal/storage-manager.js"></script>
     <script>
-        // Fallbacks to keep the portal functional if some helper files aren’t loaded
-        (function(){
-            // Base-path resolver fallback (used by various fetch helpers)
-            if (typeof window.__withBase__ !== 'function') {
-                window.__withBase__ = function(path){
-                    try {
-                        const p = String(path || '').replace(/^\/+/, '');
-                        const loc = String(window.location.pathname || '');
-                        const underPortal = loc.startsWith('/portal');
-                        return (underPortal ? '/portal/' : '/') + p;
-                    } catch(_) { return '/' + String(path || '').replace(/^\/+/, ''); }
-                };
-            }
-            // Top-level section switcher fallback (used by nav buttons)
-            if (typeof window.showSection !== 'function') {
-                function showSection(id){
-                    // Toggle sections
-                    var sections = document.querySelectorAll('.section');
-                    sections.forEach(function(s){ s.classList.remove('active'); });
-                    var target = document.getElementById(id);
-                    if (target) target.classList.add('active');
-                    // Sync top-nav active state
-                    var order = ['dashboard','create-domain','webpage-setup','manage-emails','storage','dns-manager','client-portal','system-logs','settings'];
-                    var idx = order.indexOf(id);
-                    var nav = document.querySelectorAll('.top-nav .nav-item');
-                    nav.forEach(function(b,i){ b.classList.toggle('active', i===idx); });
-                    // Ensure settings default tab
-                    if (id === 'settings' && typeof window.showSettingsTab === 'function') {
-                        window.showSettingsTab('profile');
-                    }
-                    try { history.replaceState(null, '', '#' + id); } catch(_){ }
-                }
-                window.showSection = showSection;
-            }
-        })();
-    </script>
-    <script>
-        // Enforce final title/header text in case another script changes it late
-        (function(){
-            const DESIRED = 'Sparq Dashboard';
-            function enforce(){
-                try {
-                    if (document.title !== DESIRED) document.title = DESIRED;
-                    const h1 = document.querySelector('.header h1');
-                    if (h1 && h1.textContent.trim() !== DESIRED) h1.textContent = DESIRED;
-                } catch(_){}
-            }
-            // Run now and on common lifecycle points
-            enforce();
-            document.addEventListener('DOMContentLoaded', enforce);
-            window.addEventListener('load', enforce);
-            window.addEventListener('hashchange', enforce);
-            window.addEventListener('popstate', enforce);
-            // Observe for mutations that may flip the text back
-            try {
-                const mo = new MutationObserver(enforce);
-                if (document.head) mo.observe(document.head, {subtree:true, childList:true, characterData:true});
-                const header = document.querySelector('.header');
-                if (header) mo.observe(header, {subtree:true, childList:true, characterData:true});
-            } catch(_){}
-        })();
-    </script>
-    <script>
-        // Soft shim: calm noisy 404s by providing fallbacks for profile/preferences endpoints
-        (function(){
-            if (window.__fetchShimInstalled) return; window.__fetchShimInstalled = true;
-            const origFetch = window.fetch.bind(window);
-            function toURL(input){
-                try { return (input instanceof Request) ? new URL(input.url, window.location.origin) : new URL(String(input), window.location.origin); } catch(_) { return null; }
-            }
-            function isPath(u, paths){ return u && paths.some(p=> u.pathname === p || u.pathname === ('/portal'+p)); }
-            async function jsonOk(obj){ return new Response(JSON.stringify(obj), {status:200, headers:{'Content-Type':'application/json'}}); }
-            async function tryAuthMe(base){
-                const cands = [base+'/api/auth/me', base+'/portal/api/auth/me'];
-                for (const url of cands){
-                    try { const r = await origFetch(url, {credentials:'include'}); if (r.ok) return r.json(); } catch(_){}
-                }
-                try { const raw = localStorage.getItem('currentUser'); if (raw) return JSON.parse(raw); } catch(_){}
-                return null;
-            }
-            window.fetch = async function(input, init){
-                const url = toURL(input);
-                // Pass-through if we can't parse
-                if (!url) return origFetch(input, init);
-                const method = (init && init.method) ? String(init.method).toUpperCase() : ((input && input.method) ? String(input.method).toUpperCase() : 'GET');
-                const isGET = method === 'GET';
-                const isPUT = method === 'PUT' || method === 'PATCH' || method === 'POST';
-                const profPaths = ['/api/user/me','/api/account/me','/user/me'];
-                const prefPaths = ['/api/account/preferences','/api/user/preferences','/user/preferences'];
+    (function(){
+        const $ = (id) => document.getElementById(id);
+        async function candidateFetch(paths, init){
+            const cands = [];
+            (paths||[]).forEach(p=>{ const clean = p.startsWith('/')? p : '/'+p; cands.push(clean); if (!clean.startsWith('/portal/')) cands.push('/portal'+clean); try{ if (typeof window.__withBase__==='function') cands.push(window.__withBase__(clean.replace(/^\//,''))); }catch(_){ } });
+            let lastErr; for (const url of cands){ try{ const r = await fetch(url, init); if (r.ok) return r; lastErr = new Error('HTTP '+r.status); } catch(e){ lastErr = e; } } throw lastErr || new Error('All candidates failed');
+        }
+        async function fetchJSON(paths){ const r = await candidateFetch(paths, { credentials:'include', headers:{'Accept':'application/json'} }); return r.json(); }
 
-                // Intercept profile GET
-                if (isGET && isPath(url, profPaths)){
-                    try {
-                        const r = await origFetch(input, init);
-                        if (r.status !== 404) return r;
-                    } catch(_){ /* fall through to fallback */ }
-                    const user = await tryAuthMe('');
-                    if (user) return jsonOk(user);
-                    return jsonOk({ user: { username: '', email: '' } });
-                }
-                // Intercept preferences GET
-                if (isGET && isPath(url, prefPaths)){
-                    try {
-                        const r = await origFetch(input, init);
-                        if (r.status !== 404) return r;
-                    } catch(_){ }
-                    try { const raw = localStorage.getItem('portalPrefs'); if (raw) return jsonOk(JSON.parse(raw)); } catch(_){}
-                    return jsonOk({ emails:true, security:true, updates:false });
-                }
-                // Intercept preferences PUT to store locally if backend missing
-                if (isPUT && isPath(url, prefPaths)){
-                    try {
-                        const r = await origFetch(input, init);
-                        if (r.status !== 404) return r;
-                    } catch(_){ }
-                    try {
-                        const body = init && init.body ? init.body : (input && input.body);
-                        if (body){
-                            const text = typeof body === 'string' ? body : (body instanceof Blob ? await body.text() : String(body));
-                            const obj = JSON.parse(text);
-                            localStorage.setItem('portalPrefs', JSON.stringify(obj));
-                            return jsonOk({ ok:true, stored:'local' });
-                        }
-                    } catch(_){}
-                    return jsonOk({ ok:true, stored:'local' });
-                }
-                // Default
-                return origFetch(input, init);
-            };
-        })();
+        // Nav
+        document.querySelectorAll('.top-nav .nav-item').forEach(btn=>{
+            btn.addEventListener('click', (e)=>{
+                e.preventDefault();
+                const id = btn.getAttribute('data-target');
+                document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+                document.getElementById(id)?.classList.add('active');
+                document.querySelectorAll('.top-nav .nav-item').forEach(b=>b.classList.remove('active'));
+                btn.classList.add('active');
+                try { history.replaceState(null, '', '#'+id); } catch(_){ }
+                if (id === 'contacts') loadContacts();
+            });
+        });
+        if (location.hash){ const id = location.hash.replace('#',''); const btn = document.querySelector(`.top-nav .nav-item[data-target=\"${id}\"]`); if (btn) btn.click(); }
+
+        // Diagnostics glue
+        function setDbg(id, ok){ const el=$(id); if (el) el.textContent = ok? 'OK' : '—'; }
+        function renderDiagnostic(results){ const wrap=$('diagnostic-results'); if (!wrap) return; const rows=[]; const row=(n,ok,why,fix,extra)=>{ rows.push(`<div><strong>${n}:</strong> ${ok? 'OK':'Issue'}${why? ' — '+why:''}${fix? ' | Fix: '+fix:''}${extra? ' | '+extra:''}</div>`); }; row('Postfix',results.postfix.ok,results.postfix.reason,results.postfix.fix); row('Dovecot',results.dovecot.ok,results.dovecot.reason,results.dovecot.fix); row('Nginx',results.nginx.ok,results.nginx.reason,results.nginx.fix); row('DNS',results.dns.ok,results.dns.reason,results.dns.fix); if (results.portal) row('Portal',results.portal.ok,results.portal.reason,results.portal.fix,results.portal.extra); wrap.innerHTML = rows.join(''); }
+        async function runDiagnostics(){ const results={ postfix:{ok:false}, dovecot:{ok:false}, nginx:{ok:false}, dns:{ok:false}, portal:{ok:true} }; try{ const h = await fetchJSON(['/healthz','/api/health','/gateway/health','/api/sparqy/health']); const val=(k,def=false)=> (typeof h?.[k]==='boolean')? h[k] : def; results.postfix.ok=val('postfix',true); results.dovecot.ok=val('dovecot',true); results.nginx.ok=val('nginx',true); const dnsOk = (h&&h.dns&&typeof h.dns.ok==='boolean')? h.dns.ok : val('dns',true); results.dns.ok = dnsOk; }catch(_){ results.portal = { ok:false, reason:'Portal health endpoint not reachable', fix:'Ensure portal is running and reverse proxy forwards /healthz.' }; } setDbg('dbg-postfix',!!results.postfix.ok); setDbg('dbg-dovecot',!!results.dovecot.ok); setDbg('dbg-nginx',!!results.nginx.ok); setDbg('dbg-dns',!!results.dns.ok); renderDiagnostic(results); setDbg('dbg2-postfix',!!results.postfix.ok); setDbg('dbg2-dovecot',!!results.dovecot.ok); setDbg('dbg2-nginx',!!results.nginx.ok); setDbg('dbg2-dns',!!results.dns.ok); const wrap2=$('diagnostic-results-2'); if (wrap2) wrap2.innerHTML = $('diagnostic-results')?.innerHTML || ''; }
+        async function copyDiagnostics(){ try{ const el=$('diagnostic-results'); const text = el? el.innerText : 'No diagnostics yet.'; await navigator.clipboard.writeText(text); alert('Diagnostics copied'); } catch(_){ alert('Could not copy diagnostics'); } }
+        window.runDiagnostics = runDiagnostics;
+        window.copyDiagnostics = copyDiagnostics;
+        $('btn-run-diagnostics')?.addEventListener('click', runDiagnostics);
+        $('btn-copy-diagnostics')?.addEventListener('click', copyDiagnostics);
+        $('btn-refresh-logs')?.addEventListener('click', ()=> window.refreshLogs && window.refreshLogs());
+
+        // Contacts loader
+        async function loadContacts(){ const body=$('contacts-body'); if (!body) return; const limEl=$('contacts-limit'); const filter = ($('contacts-filter')?.value || '').toLowerCase(); const lim = limEl ? Number(limEl.value||200) : 200; body.innerHTML = '<tr><td class="contacts-cell muted" colspan="7">Loading…</td></tr>'; try{ const data = await fetchJSON([`/api/contacts/submissions?limit=${lim}`]); const list = (data && data.submissions) || []; const rows=[]; list.forEach(r=>{ const when = r.at ? new Date(r.at).toLocaleString() : ''; const site = r.routingKey || ''; const from = r.name || ''; const email = r.email || ''; const subj = r.subject || ''; const to = r.to || ''; const ip = r.ip || ''; const hay = [when, site, from, email, subj, to, ip].join(' ').toLowerCase(); if (filter && !hay.includes(filter)) return; rows.push(`<tr class=\"contacts-row\"><td class=\"contacts-cell\">${when}</td><td class=\"contacts-cell\">${site}</td><td class=\"contacts-cell\">${from}</td><td class=\"contacts-cell\">${email}</td><td class=\"contacts-cell\">${subj}</td><td class=\"contacts-cell\">${to}</td><td class=\"contacts-cell\">${ip}</td></tr>`); }); body.innerHTML = rows.length ? rows.join('') : '<tr><td class=\"contacts-cell muted\" colspan=\"7\">No submissions found.</td></tr>'; } catch(_){ body.innerHTML = '<tr><td class=\"contacts-cell error\" colspan=\"7\">Failed to load submissions.</td></tr>'; } }
+        $('contacts-refresh')?.addEventListener('click', loadContacts);
+        $('contacts-filter')?.addEventListener('input', ()=>{ clearTimeout(window.__cf_to); window.__cf_to = setTimeout(loadContacts, 200); });
+        $('contacts-limit')?.addEventListener('change', loadContacts);
+        if (location.hash === '#contacts') loadContacts();
+
+        // Title/header enforcement
+        (function(){ const DESIRED='Sparq Dashboard'; function enforce(){ try{ if (document.title!==DESIRED) document.title=DESIRED; const h1=document.querySelector('.header h1'); if (h1 && h1.textContent.trim()!==DESIRED) h1.textContent=DESIRED; }catch(_){ } } enforce(); document.addEventListener('DOMContentLoaded', enforce); window.addEventListener('load', enforce); window.addEventListener('hashchange', enforce); })();
+    })();
     </script>
 </body>
 </html>

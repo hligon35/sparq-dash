@@ -551,6 +551,17 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
     }
 });
 
+// Admin-only: list recent contact submissions
+app.get('/api/contacts/submissions', authenticateToken, checkPermission('contacts:read'), async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit || 200)));
+        const list = await readJsonSafe(CONTACT_SUBMISSIONS_FILE, []);
+        return res.json({ submissions: list.slice(0, limit) });
+    } catch (e) {
+        return res.status(500).json({ error: 'Failed to load submissions' });
+    }
+});
+
 // In-memory storage (in production, use a database)
 let domains = [];
 let emailAccounts = [];
