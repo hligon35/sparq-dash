@@ -4,7 +4,8 @@ WORKDIR /app
 
 # Install dependencies first (better caching)
 COPY package*.json ./
-RUN npm ci --omit=dev
+# Use npm install to be tolerant of minor lockfile drift
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy app
 COPY . .
