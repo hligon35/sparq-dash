@@ -193,6 +193,13 @@
             btn.addEventListener('click', (e)=>{
                 e.preventDefault();
                 const id = btn.getAttribute('data-target');
+                const withBase = (p)=>{ try{ return (typeof window.__withBase__==='function') ? window.__withBase__(p.replace(/^\//,'')) : p; }catch(_){ return p; } };
+                // Redirect or action for items without on-page sections
+                if (id === 'manage-emails') { window.location.assign(withBase('/portal/email-manager.html')); return; }
+                if (id === 'create-domain') { window.location.assign(withBase('/portal/create-domain.html')); return; }
+                if (id === 'dns-manager') { window.location.assign(withBase('/portal/dns-manager.html')); return; }
+                if (id === 'client-portal') { window.open('https://sparqplug.getsparqd.com', '_blank', 'noopener'); return; }
+                if (id === 'storage') { try { window.StorageManager && window.StorageManager.open(); } catch(_){} return; }
                 document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
                 document.getElementById(id)?.classList.add('active');
                 document.querySelectorAll('.top-nav .nav-item').forEach(b=>b.classList.remove('active'));

@@ -11,6 +11,10 @@
             color: white;
             padding: 1.5rem 0;
         }
+        .top-nav { display:flex; gap:8px; padding:14px 18px; background:#fff; border-bottom:1px solid #e9ecef; align-items:center; flex-wrap:wrap; overflow-x:auto; justify-content:center; }
+        .top-nav .nav-item { display:inline-flex; align-items:center; padding:10px 14px; margin:6px 4px; font-size:.98em; white-space:nowrap; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#333; box-shadow:0 1px 2px rgba(0,0,0,.04); text-decoration:none; }
+        .top-nav .nav-item:hover { background:#f8fafc; border-color:#cbd5e1; color:#111; }
+        .top-nav .nav-item.active { background:#eff6ff; color:#1a7ad9; border-color:#1a7ad9; }
         .email-card {
             transition: transform 0.2s ease;
             border-left: 4px solid #667eea;
@@ -26,12 +30,24 @@
     <script src="shared-header-nav.js" defer></script>
 </head>
 <body>
-    <div class="admin-header">
+        <div class="admin-header">
         <div class="container">
             <h1>📧 Email Account Manager</h1>
             <p>Manage all client email accounts and settings</p>
         </div>
     </div>
+
+        <div class="top-nav">
+            <a class="nav-item" href="/portal/index.html#dashboard">Dashboard</a>
+            <a class="nav-item" href="/portal/create-domain.html">Create Domain Email</a>
+            <a class="nav-item active" href="#">Manage Emails</a>
+            <a class="nav-item" href="/portal/index.html#storage">Storage</a>
+            <a class="nav-item" href="/portal/dns-manager.html">DNS Manager</a>
+            <a class="nav-item" href="https://sparqplug.getsparqd.com" target="_blank" rel="noopener">Client Portal</a>
+            <a class="nav-item" href="/portal/index.html#system-logs">Debug Panel</a>
+            <a class="nav-item" href="/portal/index.html#contacts">Contact Submissions</a>
+            <a class="nav-item" href="/portal/index.html#settings">Settings</a>
+        </div>
 
     <div class="container mt-4">
         <div class="row">

@@ -1105,6 +1105,7 @@ app.get(['/login', '/login.html'], (req, res) => {
 
 // Simple health check
 app.get('/healthz', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true, service: 'email-admin', time: new Date().toISOString() });
 });
 
@@ -1124,6 +1125,17 @@ app.get('/api/version', (req, res) => {
         },
         uptimeSec: Math.round(process.uptime())
     });
+});
+
+// robots.txt for portal
+app.get('/robots.txt', (_req,res)=>{
+    res.type('text/plain').send([
+        'User-agent: *',
+        'Disallow: /api/',
+        'Disallow: /dashboard',
+        'Sitemap: https://portal.getsparqd.com/sitemap.xml',
+        ''
+    ].join('\n'));
 });
 
 // API Routes (protected)

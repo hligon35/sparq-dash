@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DNS Manager - SparQ Portal</title>
+  <link rel="stylesheet" href="/portal/sparq-colors.css" />
+  <script src="shared-header-nav.js" defer></script>
+  <style>
+    .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.05); overflow: hidden; }
+    .section { padding: 20px; }
+    .card { background:#fff; border-radius: 10px; padding: 18px; margin: 14px 0; box-shadow: 0 1px 3px rgba(0,0,0,.06); border:1px solid #eef1f4; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:8px; border-bottom:1px solid #eef1f4; text-align:left; }
+    .btn { background: #1a7ad9; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="shared-header"><h1>🍎 SparQd Email Admin</h1><p>Account Management</p></div>
+    <div class="top-nav">
+      <a class="nav-item" href="/portal/index.html#dashboard">Dashboard</a>
+      <a class="nav-item" href="/portal/create-domain.html">Create Domain Email</a>
+      <a class="nav-item" href="/portal/email-manager.html">Manage Emails</a>
+      <a class="nav-item" href="/portal/index.html#storage">Storage</a>
+      <a class="nav-item active" href="#">DNS Manager</a>
+      <a class="nav-item" href="https://sparqplug.getsparqd.com" target="_blank" rel="noopener">Client Portal</a>
+      <a class="nav-item" href="/portal/index.html#system-logs">Debug Panel</a>
+      <a class="nav-item" href="/portal/index.html#contacts">Contact Submissions</a>
+      <a class="nav-item" href="/portal/index.html#settings">Settings</a>
+    </div>
+    <div class="section">
+      <div class="card">
+        <h2>DNS Manager</h2>
+        <p class="muted">Coming soon: manage A, AAAA, CNAME, MX, TXT records with validation.</p>
+        <div style="margin-top:12px"><button class="btn" onclick="alert('This is a placeholder page. Wire to backend when ready.')">Add Record</button></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
