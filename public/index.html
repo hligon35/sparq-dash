@@ -53,6 +53,8 @@
     .health-crit .health-dot { background:#dc2626; }
     .warn-text { color:#9a3412; font-weight:600; }
     .hidden { display:none; }
+    .health-badge.sm { transform: scale(0.9); font-weight:600; }
+    .top-nav .nav-item .inline-badge { margin-left:8px; display:inline-flex; vertical-align:middle; }
     </style>
 </head>
 <body>
@@ -65,7 +67,7 @@
             <button class="nav-item active" data-target="dashboard">Dashboard</button>
             <button class="nav-item" data-target="create-domain">Create Domain Email</button>
             <button class="nav-item" data-target="manage-emails">Manage Emails</button>
-            <button class="nav-item" data-target="storage">Storage</button>
+            <button class="nav-item" data-target="storage">Storage <span class="inline-badge"><span class="health-badge sm" id="nav-storage-health"><span class="health-dot"></span><span class="health-text">—</span></span></span></button>
             <button class="nav-item" data-target="dns-manager">DNS Manager</button>
             <button class="nav-item" data-target="client-portal">Sparq Plug</button>
             <button class="nav-item" data-target="system-logs">Debug Panel</button>
@@ -229,9 +231,9 @@
                 const id = btn.getAttribute('data-target');
                 const withBase = (p)=>{ try{ return (typeof window.__withBase__==='function') ? window.__withBase__(p.replace(/^\//,'')) : p; }catch(_){ return p; } };
                 // Redirect or action for items without on-page sections
-                if (id === 'manage-emails') { window.location.assign(withBase('/portal/email-manager.html')); return; }
-                if (id === 'create-domain') { window.location.assign(withBase('/portal/create-domain.html')); return; }
-                if (id === 'dns-manager') { window.location.assign(withBase('/portal/dns-manager.html')); return; }
+                if (id === 'manage-emails') { window.location.assign(withBase('/email-manager.html')); return; }
+                if (id === 'create-domain') { window.location.assign(withBase('/create-domain.html')); return; }
+                if (id === 'dns-manager') { window.location.assign(withBase('/dns-manager.html')); return; }
                 if (id === 'client-portal') {
                     // Compute role-aware Sparq Plug URL via API for accuracy
                     (async ()=>{
@@ -287,6 +289,23 @@
                     else if (pctFree <= Number(gt.warn20||20)) { cls = 'health-warn'; }
                     hb?.classList.add(cls);
                     ht && (ht.textContent = label);
+                }
+
+                // Update top-nav badge
+                const hbNav = document.getElementById('nav-storage-health');
+                const htNav = hbNav?.querySelector('.health-text');
+                if (hbNav && htNav) {
+                    hbNav.classList.remove('health-ok','health-warn','health-crit');
+                    if (pctFree == null) {
+                        htNav.textContent = '—';
+                    } else {
+                        let cls = 'health-ok'; let label = `${pctFree}%`;
+                        if (pctFree <= Number(gt.warn5||5)) { cls = 'health-crit'; }
+                        else if (pctFree <= Number(gt.warn10||10)) { cls = 'health-crit'; }
+                        else if (pctFree <= Number(gt.warn20||20)) { cls = 'health-warn'; }
+                        hbNav.classList.add(cls);
+                        htNav.textContent = label;
+                    }
                 }
 
                 const needed = Math.max(0, allocated - used);

@@ -99,7 +99,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Load data with delay to ensure DOM is ready
             setTimeout(() => {
                 loadDashboardStats();
-                loadEmailList();
+                if (document.getElementById('email-list')) {
+                    loadEmailList();
+                }
                 loadSystemLogs();
             }, 500);
             
@@ -108,8 +110,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const createDomainForm = document.getElementById('create-domain-form');
                 if (createDomainForm) {
                     createDomainForm.addEventListener('submit', handleDomainCreation);
-                } else {
-                    console.warn('Create domain form not found');
                 }
             }, 600);
         } else {
