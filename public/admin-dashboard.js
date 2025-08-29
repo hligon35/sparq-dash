@@ -305,7 +305,7 @@ function updateUIForRole(role) {
     // Update page title and header
     const header = document.querySelector('.header h1');
     if (header) {
-        header.textContent = `🍎 SparQd Email Admin - ${role.charAt(0).toUpperCase() + role.slice(1)} Portal`;
+        header.textContent = `SparQ Portal - ${role.charAt(0).toUpperCase() + role.slice(1)}`;
     }
 }
 
