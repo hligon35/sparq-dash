@@ -39,6 +39,9 @@
         .muted { color:#666; }
         .error { color:#c00; }
         .row-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+    .flex-between { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .mt-8 { margin-top:8px; }
+    .m0 { margin:0; }
     </style>
 </head>
 <body>
@@ -67,6 +70,20 @@
                     <div class="stat-card"><div class="stat-number" id="total-emails">0</div><div class="stat-label">Email Accounts</div></div>
                     <div class="stat-card"><div class="stat-number" id="storage-used">0GB</div><div class="stat-label">Storage Used</div></div>
                     <div class="stat-card"><div class="stat-number" id="monthly-savings">$0</div><div class="stat-label">Monthly Savings</div></div>
+                </div>
+                <div class="card" id="storage-summary-card" aria-live="polite">
+                    <div class="flex-between">
+                        <h3 class="m0">Storage Summary</h3>
+                        <div>
+                            <button class="btn" id="btn-open-storage">Open Manager</button>
+                        </div>
+                    </div>
+                    <div class="stats-grid mt-8">
+                        <div class="stat-card"><div class="stat-number" id="ss-total">—</div><div class="stat-label">Disk Total</div></div>
+                        <div class="stat-card"><div class="stat-number" id="ss-free">—</div><div class="stat-label">Disk Free</div></div>
+                        <div class="stat-card"><div class="stat-number" id="ss-alloc">—</div><div class="stat-label">Allocated</div></div>
+                        <div class="stat-card"><div class="stat-number" id="ss-used">—</div><div class="stat-label">Used (sum)</div></div>
+                    </div>
                 </div>
                 <div class="card">
                     <h3>System Status</h3>
@@ -209,6 +226,26 @@
             });
         });
         if (location.hash){ const id = location.hash.replace('#',''); const btn = document.querySelector(`.top-nav .nav-item[data-target=\"${id}\"]`); if (btn) btn.click(); }
+
+        // Storage Summary widget
+        async function loadStorageSummary(){
+            try {
+                const r = await candidateFetch(['/api/storage/allocations']);
+                const data = await r.json();
+                const disk = data.disk || { totalGB: 0, freeGB: 0 };
+                const allocs = Array.isArray(data.allocations) ? data.allocations : [];
+                const allocated = allocs.reduce((s,a)=> s + (Number(a.allocatedGB||0)||0), 0);
+                const used = allocs.reduce((s,a)=> s + (Number(a.usedGB||0)||0), 0);
+                $('ss-total').textContent = (disk.totalGB||0) + ' GB';
+                $('ss-free').textContent = (disk.freeGB||0) + ' GB';
+                $('ss-alloc').textContent = allocated + ' GB';
+                $('ss-used').textContent = used + ' GB';
+            } catch (e) {
+                // Non-blocking
+            }
+        }
+        $('btn-open-storage')?.addEventListener('click', ()=>{ try{ window.StorageManager && window.StorageManager.open(); }catch(_){} });
+        loadStorageSummary();
 
         // Diagnostics glue
         function setDbg(id, ok){ const el=$(id); if (el) el.textContent = ok? 'OK' : '—'; }
