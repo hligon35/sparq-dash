@@ -605,11 +605,8 @@ async function loadEmailList() {
         
         const emails = await response.json();
         
-        const emailList = document.getElementById('email-list');
-        if (!emailList) {
-            console.error('Email list element not found');
-            return;
-        }
+    const emailList = document.getElementById('email-list');
+    if (!emailList) return; // Page doesn't include the email list; nothing to render.
         
         emailList.innerHTML = '';
         
