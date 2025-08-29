@@ -4,15 +4,13 @@
   "description": "Email Management Dashboard for Client Domains",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "smoke": "node ./scripts/smoke.js",
-    "check:versions": "node ./scripts/check-versions.js",
-    "test:contact": "node ./scripts/send-test-contact.js"
+  "start": "node server.js",
+  "dev": "nodemon server.js",
+  "smoke": "node ./scripts/smoke.js"
   },
   "dependencies": {
-    "bcrypt": "^5.1.0",
-    "bcryptjs": "^2.4.3",
+  "bcrypt": "^5.1.0",
+  "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
     "connect-redis": "^8.1.0",
     "cors": "^2.8.5",
@@ -24,7 +22,7 @@
     "helmet": "^8.1.0",
     "http-proxy-middleware": "^3.0.5",
     "ioredis": "^5.7.0",
-    "cookie": "^0.7.2",
+  "cookie": "^0.7.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.8",

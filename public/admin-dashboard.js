@@ -99,9 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Load data with delay to ensure DOM is ready
             setTimeout(() => {
                 loadDashboardStats();
-                if (document.getElementById('email-list')) {
-                    loadEmailList();
-                }
+                loadEmailList();
                 loadSystemLogs();
             }, 500);
             
@@ -110,6 +108,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const createDomainForm = document.getElementById('create-domain-form');
                 if (createDomainForm) {
                     createDomainForm.addEventListener('submit', handleDomainCreation);
+                } else {
+                    console.warn('Create domain form not found');
                 }
             }, 600);
         } else {
@@ -305,7 +305,7 @@ function updateUIForRole(role) {
     // Update page title and header
     const header = document.querySelector('.header h1');
     if (header) {
-        header.textContent = `SparQ Portal - ${role.charAt(0).toUpperCase() + role.slice(1)}`;
+        header.textContent = `🍎 SparQd Email Admin - ${role.charAt(0).toUpperCase() + role.slice(1)} Portal`;
     }
 }
 
@@ -605,8 +605,11 @@ async function loadEmailList() {
         
         const emails = await response.json();
         
-    const emailList = document.getElementById('email-list');
-    if (!emailList) return; // Page doesn't include the email list; nothing to render.
+        const emailList = document.getElementById('email-list');
+        if (!emailList) {
+            console.error('Email list element not found');
+            return;
+        }
         
         emailList.innerHTML = '';
         
