@@ -42,6 +42,17 @@
     .flex-between { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .mt-8 { margin-top:8px; }
     .m0 { margin:0; }
+    .health { display:inline-flex; align-items:center; gap:8px; }
+    .health-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; font-weight:700; }
+    .health-dot { width:8px; height:8px; border-radius:999px; background:#9ca3af; }
+    .health-ok { background:#e8f7ee; color:#166534; }
+    .health-ok .health-dot { background:#16a34a; }
+    .health-warn { background:#fff7ed; color:#9a3412; }
+    .health-warn .health-dot { background:#f59e0b; }
+    .health-crit { background:#fee2e2; color:#991b1b; }
+    .health-crit .health-dot { background:#dc2626; }
+    .warn-text { color:#9a3412; font-weight:600; }
+    .hidden { display:none; }
     </style>
 </head>
 <body>
@@ -56,7 +67,7 @@
             <button class="nav-item" data-target="manage-emails">Manage Emails</button>
             <button class="nav-item" data-target="storage">Storage</button>
             <button class="nav-item" data-target="dns-manager">DNS Manager</button>
-            <button class="nav-item" data-target="client-portal">Client Portal</button>
+            <button class="nav-item" data-target="client-portal">Sparq Plug</button>
             <button class="nav-item" data-target="system-logs">Debug Panel</button>
             <button class="nav-item" data-target="contacts">Contact Submissions</button>
             <button class="nav-item" data-target="settings">Settings</button>
@@ -83,6 +94,12 @@
                         <div class="stat-card"><div class="stat-number" id="ss-free">—</div><div class="stat-label">Disk Free</div></div>
                         <div class="stat-card"><div class="stat-number" id="ss-alloc">—</div><div class="stat-label">Allocated</div></div>
                         <div class="stat-card"><div class="stat-number" id="ss-used">—</div><div class="stat-label">Used (sum)</div></div>
+                    </div>
+                    <div class="flex-between mt-8">
+                        <div class="health" id="ss-health-wrap">
+                            <span class="health-badge" id="ss-health"><span class="health-dot"></span><span class="health-text">—</span></span>
+                        </div>
+                        <div id="ss-warning" class="warn-text hidden"></div>
                     </div>
                 </div>
                 <div class="card">
@@ -215,7 +232,20 @@
                 if (id === 'manage-emails') { window.location.assign(withBase('/portal/email-manager.html')); return; }
                 if (id === 'create-domain') { window.location.assign(withBase('/portal/create-domain.html')); return; }
                 if (id === 'dns-manager') { window.location.assign(withBase('/portal/dns-manager.html')); return; }
-                if (id === 'client-portal') { window.open('https://sparqplug.getsparqd.com', '_blank', 'noopener'); return; }
+                if (id === 'client-portal') {
+                    // Compute role-aware Sparq Plug URL via API for accuracy
+                    (async ()=>{
+                        try {
+                            const r = await candidateFetch(['/api/sparqplug/url']);
+                            const j = await r.json();
+                            const url = (j && j.url) || 'https://sparqplug.getsparqd.com';
+                            window.open(url, '_blank', 'noopener');
+                        } catch(_) {
+                            window.open('https://sparqplug.getsparqd.com', '_blank', 'noopener');
+                        }
+                    })();
+                    return;
+                }
                 if (id === 'storage') { try { window.StorageManager && window.StorageManager.open(); } catch(_){} return; }
                 document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
                 document.getElementById(id)?.classList.add('active');
@@ -240,12 +270,41 @@
                 $('ss-free').textContent = (disk.freeGB||0) + ' GB';
                 $('ss-alloc').textContent = allocated + ' GB';
                 $('ss-used').textContent = used + ' GB';
+
+                // Health indicator and warnings
+                const pctFree = (disk.totalGB && disk.freeGB >= 0) ? Math.round((disk.freeGB / disk.totalGB) * 100) : null;
+                const gt = (data.globalThresholds || { warn20:20, warn10:10, warn5:5 });
+                const hb = $('ss-health');
+                const ht = hb?.querySelector('.health-text');
+                if (pctFree == null) {
+                    hb?.classList.remove('health-ok','health-warn','health-crit');
+                    ht && (ht.textContent = 'Unknown');
+                } else {
+                    hb?.classList.remove('health-ok','health-warn','health-crit');
+                    let cls = 'health-ok'; let label = `${pctFree}% free`;
+                    if (pctFree <= Number(gt.warn5||5)) { cls = 'health-crit'; }
+                    else if (pctFree <= Number(gt.warn10||10)) { cls = 'health-crit'; }
+                    else if (pctFree <= Number(gt.warn20||20)) { cls = 'health-warn'; }
+                    hb?.classList.add(cls);
+                    ht && (ht.textContent = label);
+                }
+
+                const needed = Math.max(0, allocated - used);
+                const overAlloc = allocated > (disk.totalGB||0);
+                const shortfall = needed > (disk.freeGB||0);
+                const warn = $('ss-warning');
+                const msgs = [];
+                if (overAlloc) msgs.push(`Allocated ${allocated}GB exceeds total ${disk.totalGB||0}GB.`);
+                if (shortfall) msgs.push(`Remaining planned need ${needed}GB exceeds free ${disk.freeGB||0}GB.`);
+                if (msgs.length) { warn.style.display = ''; warn.textContent = msgs.join(' '); } else { warn.style.display = 'none'; warn.textContent = ''; }
             } catch (e) {
                 // Non-blocking
             }
         }
         $('btn-open-storage')?.addEventListener('click', ()=>{ try{ window.StorageManager && window.StorageManager.open(); }catch(_){} });
         loadStorageSummary();
+        // Auto-refresh summary periodically
+        setInterval(loadStorageSummary, 60000);
 
         // Diagnostics glue
         function setDbg(id, ok){ const el=$(id); if (el) el.textContent = ok? 'OK' : '—'; }

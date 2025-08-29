@@ -18,7 +18,7 @@
       <a class="nav-item" href="/portal/email-manager.html">Manage Emails</a>
       <a class="nav-item" href="/portal/index.html#storage">Storage</a>
       <a class="nav-item active" href="#">DNS Manager</a>
-      <a class="nav-item" href="https://sparqplug.getsparqd.com" target="_blank" rel="noopener">Client Portal</a>
+      <a class="nav-item" id="nav-sparqplug" href="https://sparqplug.getsparqd.com" target="_blank" rel="noopener">Sparq Plug</a>
       <a class="nav-item" href="/portal/index.html#system-logs">Debug Panel</a>
       <a class="nav-item" href="/portal/index.html#contacts">Contact Submissions</a>
       <a class="nav-item" href="/portal/index.html#settings">Settings</a>
@@ -31,5 +31,21 @@
       </div>
     </div>
   </div>
+    <script>
+      (function(){
+        function withBase(p){ try { return (typeof window.__withBase__==='function') ? window.__withBase__(String(p).replace(/^\/+/,'')) : p; } catch(_){ return p; } }
+        async function openSparqPlug(e){
+          try {
+            const resp = await fetch(withBase('/api/sparqplug/url'), { credentials:'include' });
+            const json = await resp.json();
+            const url = (json && json.url) || 'https://sparqplug.getsparqd.com';
+            window.open(url, '_blank', 'noopener');
+            e?.preventDefault();
+          } catch(_){ /* fall back to href */ }
+        }
+        const link = document.getElementById('nav-sparqplug');
+        if (link) link.addEventListener('click', function(e){ e.preventDefault(); openSparqPlug(e); });
+      })();
+    </script>
 </body>
 </html>
