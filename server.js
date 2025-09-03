@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const connectRedis = require('connect-redis');
 const { createClient } = require('redis');
 const nodemailer = require('nodemailer');
+const os = require('os');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs').promises;
@@ -33,8 +34,14 @@ const { router: authRouter, authenticateToken, checkPermission, ROLES, adminUser
 const app = express();
 const execAsync = promisify(exec);
 const PORT = process.env.PORT || 3003;
+// Package metadata (for version endpoint)
+let __pkg = { name: 'sparq-dash', version: '0.0.0' };
+try { __pkg = require('./package.json'); } catch(_) {}
 // Config persistence path (overrides legacy hardcoded path)
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'data', 'email-admin-config.json');
+const STORAGE_FILE = path.join(__dirname, 'data', 'storage-allocations.json');
+const CONTACT_ROUTING_FILE = path.join(__dirname, 'data', 'contact-routing.json');
+const CONTACT_SUBMISSIONS_FILE = path.join(__dirname, 'data', 'contact-submissions.json');
 
 // Behind Cloudflare Tunnel/reverse proxy
 app.set('trust proxy', 1);
@@ -42,13 +49,19 @@ app.set('trust proxy', 1);
 app.use('/portal', express.static(path.join(__dirname, 'public')));
 
 // Middleware
-app.use(cors({
-    origin: (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean),
-    credentials: true
-}));
+// Merge global CORS allowlist with contact-routing allowOrigins
+let corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+try {
+    const fsSync = require('fs');
+    const rawCR = fsSync.readFileSync(path.join(__dirname, 'data', 'contact-routing.json'), 'utf8');
+    const cr = JSON.parse(rawCR);
+    const more = Array.isArray(cr.allowOrigins) ? cr.allowOrigins : [];
+    corsOrigins = Array.from(new Set([...corsOrigins, ...more]));
+} catch (_) { /* optional */ }
+app.use(cors({ origin: corsOrigins, credentials: true }));
 // Security headers
 app.use(helmet({
     // We'll control framing with CSP only (more flexible than X-Frame-Options)
@@ -75,6 +88,8 @@ app.use(helmet({
 // Basic rate limiting
 app.use(rateLimit({ windowMs: 60 * 1000, limit: Number(process.env.RATE_LIMIT || 300) }));
 app.use(express.json());
+// Accept classic HTML form posts
+app.use(express.urlencoded({ extended: true }));
 // Session store (Redis optional)
 const SESSION_SECRETS = (process.env.SESSION_SECRETS || process.env.SESSION_SECRET || 'email-admin-session-secret')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -109,7 +124,7 @@ app.use(session({
     proxy: true,
     name: process.env.SESSION_NAME || 'portal.sid',
     cookie: {
-        secure: process.env.NODE_ENV === 'production' ? true : 'auto',
+        secure: 'auto',
         httpOnly: true,
         sameSite: 'lax',
         domain: process.env.SESSION_DOMAIN || undefined,
@@ -231,6 +246,329 @@ app.use((req, res, next) => {
         req.url = req.url.substring('/portal'.length);
     }
     next();
+});
+
+// ---------------- Storage Allocation Manager (server) ----------------
+async function readJsonSafe(file, fallback) {
+    try { const raw = await fs.readFile(file, 'utf8'); return JSON.parse(raw); }
+    catch { return fallback; }
+}
+async function writeJsonSafe(file, data) {
+    const tmp = file + '.tmp';
+    await fs.mkdir(path.dirname(file), { recursive: true }).catch(()=>{});
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, file);
+}
+function getDiskStats(callback){
+    // Prefer df -k for real disk; fallback to os.freemem
+    exec('df -k --output=avail,size / | tail -n 1', (err, stdout)=>{
+        if (err || !stdout) {
+            const totalGB = Math.round((os.totalmem() / (1024**3))*100)/100;
+            const freeGB = Math.round((os.freemem() / (1024**3))*100)/100;
+            return callback(null, { totalGB, freeGB });
+        }
+        const parts = stdout.trim().split(/\s+/);
+        const availKB = Number(parts[0]);
+        const sizeKB = Number(parts[1] || 0);
+        const freeGB = Math.round((availKB/1024/1024)*100)/100;
+        const totalGB = Math.round((sizeKB/1024/1024)*100)/100;
+        callback(null, { totalGB, freeGB });
+    });
+}
+function getPathUsedGB(p){
+    return new Promise((resolve) => {
+        if (!p || typeof p !== 'string') return resolve(null);
+        try {
+            const escaped = p.replace(/'/g, "'\"'\"'");
+            exec(`du -sk '${escaped}'`, (err, stdout) => {
+                if (err || !stdout) return resolve(null);
+                const kb = Number(String(stdout).trim().split(/\s+/)[0] || 0);
+                if (!isFinite(kb) || kb <= 0) return resolve(0);
+                const gb = Math.round((kb/1024/1024) * 100) / 100; // KB -> GB
+                resolve(gb);
+            });
+        } catch(_) { resolve(null); }
+    });
+}
+function percentRemaining(alloc){
+    const used = Number(alloc.usedGB || 0);
+    const total = Math.max(0, Number(alloc.allocatedGB || alloc.totalGB || 0));
+    if (!total) return 100;
+    return Math.max(0, Math.round(((total - used) / total) * 100));
+}
+async function sendStorageAlertEmail({ to, subject, text }){
+    try {
+        let transporter;
+        if (!process.env.EMAIL_SMTP_HOST) {
+            // Mock transport for dev: outputs message as JSON to logs
+            transporter = nodemailer.createTransport({ jsonTransport: true });
+        } else {
+            transporter = nodemailer.createTransport({
+                host: process.env.EMAIL_SMTP_HOST,
+                port: Number(process.env.EMAIL_SMTP_PORT || 587),
+                secure: String(process.env.EMAIL_SMTP_SECURE || 'false') === 'true',
+                auth: (process.env.EMAIL_SMTP_USER && process.env.EMAIL_SMTP_PASS) ? {
+                    user: process.env.EMAIL_SMTP_USER,
+                    pass: process.env.EMAIL_SMTP_PASS
+                } : undefined
+            });
+        }
+        await transporter.sendMail({
+            from: process.env.EMAIL_FROM || 'alerts@getsparqd.com',
+            to,
+            subject,
+            text
+        });
+        addLog(`Storage alert sent to ${to}: ${subject}`);
+    } catch (e) {
+        addLog(`Storage alert email failed to ${to}: ${e.message}`, 'error');
+    }
+}
+function scheduleStorageMonitor(){
+    if (scheduleStorageMonitor._started) return; scheduleStorageMonitor._started = true;
+    const intervalMs = Number(process.env.STORAGE_MONITOR_INTERVAL_MS || 5*60*1000);
+    setInterval(async ()=>{
+        try {
+            const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+            const { allocations, globalThresholds } = state;
+            if (!Array.isArray(allocations) || !allocations.length) return;
+            for (const a of allocations){
+                // Auto-track used space if a path is provided (Linux environments)
+                try {
+                    if ((a.autoTrack === undefined || a.autoTrack === true) && a.path) {
+                        const used = await getPathUsedGB(a.path);
+                        if (used != null) a.usedGB = used;
+                    }
+                } catch(_) { /* best-effort */ }
+                const pct = percentRemaining(a);
+                const thresholds = a.thresholds || globalThresholds || {};
+                const marks = [Number(thresholds.warn20||20), Number(thresholds.warn10||10), Number(thresholds.warn5||5)].sort((x,y)=>y-x);
+                const trig = marks.find(m => pct <= m);
+                if (!trig) continue;
+                if (!a._lastAlertPct || pct < a._lastAlertPct - 1) {
+                    a._lastAlertPct = pct;
+                    const subject = `Storage low for ${a.client || a.purpose || 'allocation'}: ${pct}% remaining`;
+                    const text = `Hello,\n\nThis is an automatic alert for ${a.client || ''} ${a.purpose ? '('+a.purpose+')' : ''}.\nAllocation: ${a.allocatedGB||a.totalGB} GB\nUsed: ${a.usedGB||0} GB\nRemaining: ${((a.allocatedGB||a.totalGB)-(a.usedGB||0))} GB (${pct}%)\n\nThreshold crossed: ${trig}%\n\n— SparQ Digital Storage Monitor`;
+                    if (a.email) await sendStorageAlertEmail({ to: a.email, subject, text });
+                }
+            }
+            await writeJsonSafe(STORAGE_FILE, state);
+        } catch(e){ addLog('Storage monitor error: '+e.message, 'error'); }
+    }, intervalMs);
+}
+scheduleStorageMonitor();
+
+// CRUD APIs
+app.get('/api/storage/allocations', authenticateToken, checkPermission('storage:read'), async (req,res)=>{
+    const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+    getDiskStats((_e, disk)=>{ res.json({ ...state, disk }); });
+});
+app.post('/api/storage/allocations', authenticateToken, checkPermission('storage:write'), async (req,res)=>{
+    const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+    const a = req.body || {};
+    const id = a.id || uuidv4();
+    const record = {
+        id,
+        client: a.client || a.clientName || '',
+        purpose: a.purpose || '',
+        email: a.email || '',
+        allocatedGB: Number(a.allocatedGB || a.totalGB || 0),
+        usedGB: Number(a.usedGB || 0),
+        path: a.path || '',
+        autoTrack: a.autoTrack !== false,
+        thresholds: a.thresholds || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+    const idx = state.allocations.findIndex(x=>x.id===id);
+    if (idx>=0) state.allocations[idx] = { ...state.allocations[idx], ...record, id };
+    else state.allocations.push(record);
+    await writeJsonSafe(STORAGE_FILE, state);
+    res.json({ ok:true, allocation: record });
+});
+app.put('/api/storage/allocations/:id', authenticateToken, checkPermission('storage:write'), async (req,res)=>{
+    const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+    const id = req.params.id;
+    const idx = state.allocations.findIndex(x=>x.id===id);
+    if (idx===-1) return res.status(404).json({ error:'Not found' });
+    const a = req.body || {};
+    state.allocations[idx] = {
+        ...state.allocations[idx],
+        client: a.client ?? state.allocations[idx].client,
+        purpose: a.purpose ?? state.allocations[idx].purpose,
+        email: a.email ?? state.allocations[idx].email,
+        allocatedGB: a.allocatedGB != null ? Number(a.allocatedGB) : state.allocations[idx].allocatedGB,
+        usedGB: a.usedGB != null ? Number(a.usedGB) : state.allocations[idx].usedGB,
+        path: a.path !== undefined ? a.path : state.allocations[idx].path,
+        autoTrack: a.autoTrack !== undefined ? !!a.autoTrack : (state.allocations[idx].autoTrack !== undefined ? state.allocations[idx].autoTrack : true),
+        thresholds: a.thresholds ?? state.allocations[idx].thresholds,
+        updatedAt: new Date().toISOString()
+    };
+    await writeJsonSafe(STORAGE_FILE, state);
+    res.json({ ok:true, allocation: state.allocations[idx] });
+});
+app.delete('/api/storage/allocations/:id', authenticateToken, checkPermission('storage:write'), async (req,res)=>{
+    const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+    const id = req.params.id;
+    const before = state.allocations.length;
+    state.allocations = state.allocations.filter(x=>x.id!==id);
+    if (state.allocations.length === before) return res.status(404).json({ error:'Not found' });
+    await writeJsonSafe(STORAGE_FILE, state);
+    res.json({ ok:true });
+});
+app.put('/api/storage/thresholds', authenticateToken, checkPermission('storage:write'), async (req,res)=>{
+    const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+    const t = req.body || {};
+    state.globalThresholds = {
+        warn20: Number(t.warn20 ?? state.globalThresholds.warn20 ?? 20),
+        warn10: Number(t.warn10 ?? state.globalThresholds.warn10 ?? 10),
+        warn5: Number(t.warn5 ?? state.globalThresholds.warn5 ?? 5)
+    };
+    await writeJsonSafe(STORAGE_FILE, state);
+    res.json({ ok:true, globalThresholds: state.globalThresholds });
+});
+
+// Manually trigger usage scan for a specific allocation (admin-only)
+app.post('/api/storage/allocations/:id/scan', authenticateToken, checkPermission('storage:write'), async (req,res)=>{
+    try {
+        const state = await readJsonSafe(STORAGE_FILE, { globalThresholds:{warn20:20,warn10:10,warn5:5}, allocations:[] });
+        const id = req.params.id;
+        const idx = state.allocations.findIndex(x=>x.id===id);
+        if (idx===-1) return res.status(404).json({ error:'Not found' });
+        const a = state.allocations[idx];
+        if (!a.path) return res.status(400).json({ error:'No path configured for this allocation' });
+        const used = await getPathUsedGB(a.path);
+        if (used == null) return res.status(500).json({ error:'Failed to compute usage' });
+        a.usedGB = used;
+        a.updatedAt = new Date().toISOString();
+        await writeJsonSafe(STORAGE_FILE, state);
+        res.json({ ok:true, allocation: a });
+    } catch(e){ res.status(500).json({ error:'Scan failed' }); }
+});
+
+// ---- Universal Contact Form Endpoint ----
+async function loadContactRouting() {
+    try {
+        const raw = await fs.readFile(CONTACT_ROUTING_FILE, 'utf8');
+        const json = JSON.parse(raw);
+        return json && typeof json === 'object' ? json : {};
+    } catch(_) { return {}; }
+}
+const contactLimiter = rateLimit({ windowMs: 60 * 1000, limit: Number(process.env.CONTACT_RATE_LIMIT || 60) });
+app.post('/api/contact', contactLimiter, async (req, res) => {
+    try {
+        // Honeypot: silently accept but drop if bot fills hidden field
+        if (req.body && (req.body.hp || req.body._hp || req.body.companyWebsite)) {
+            addLog('Contact honeypot triggered; dropping message');
+            return res.json({ ok: true });
+        }
+        // Determine origin and routing key
+        const origin = (req.headers['origin'] || req.headers['referer'] || '').toString();
+        const site = (req.body.site || req.query.site || '').toString().trim();
+        const routingKey = site || origin.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+
+        // Extract fields (support common names)
+        const name = (req.body.name || req.body.fullName || '').toString().trim().slice(0, 200);
+        const email = (req.body.email || req.body.from || '').toString().trim().slice(0, 200);
+        const phone = (req.body.phone || req.body.tel || '').toString().trim().slice(0, 50);
+        const subjectRaw = (req.body.subject || '').toString().trim().slice(0, 200);
+        const message = (req.body.message || req.body.msg || req.body.body || '').toString().trim().slice(0, 5000);
+        const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+
+        if (!email && !message) return res.status(400).json({ error: 'Missing required fields' });
+
+        // Load routing map
+        const map = await loadContactRouting();
+        // Map may be { routes: { key: { to, cc, bcc, subject }, default: { ... } }, allowOrigins: [] }
+        const routes = map.routes || {};
+        const route = routes[routingKey] || routes['default'] || {};
+    const to = (process.env.CONTACT_DEFAULT_TO || route.to || process.env.EMAIL_TO || process.env.EMAIL_FROM || 'hligon@getsparqd.com');
+
+        // Optional CORS allowlist for unauthenticated POSTs
+        const allow = (process.env.CONTACT_CORS_ORIGINS || (map.allowOrigins || []).join(',')).split(',').map(s=>s.trim()).filter(Boolean);
+        if (allow.length) {
+            const ok = origin && allow.some(a => origin.toLowerCase().startsWith(a.toLowerCase()));
+            if (!ok) return res.status(403).json({ error: 'Origin not allowed' });
+        }
+
+        // Prepare mail
+        const subject = route.subject || subjectRaw || `Website Contact${routingKey ? ' - ' + routingKey : ''}`;
+        const lines = [
+            `From: ${name || '(no name)'} <${email || 'unknown'}>`,
+            phone ? `Phone: ${phone}` : null,
+            `Origin: ${origin || '(unknown)'}`,
+            `IP: ${ip}`,
+            '---',
+            message || '(no message)'
+        ].filter(Boolean);
+        const text = lines.join('\n');
+
+        // Transport: JSON in dev if SMTP not configured
+        let transporter;
+        if (!process.env.EMAIL_SMTP_HOST) {
+            transporter = nodemailer.createTransport({ jsonTransport: true });
+        } else {
+            transporter = nodemailer.createTransport({
+                host: process.env.EMAIL_SMTP_HOST,
+                port: Number(process.env.EMAIL_SMTP_PORT || 587),
+                secure: String(process.env.EMAIL_SMTP_SECURE || 'false') === 'true',
+                auth: (process.env.EMAIL_SMTP_USER && process.env.EMAIL_SMTP_PASS) ? {
+                    user: process.env.EMAIL_SMTP_USER,
+                    pass: process.env.EMAIL_SMTP_PASS
+                } : undefined
+            });
+        }
+
+        const mail = {
+            from: process.env.EMAIL_FROM || 'no-reply@getsparqd.com',
+            to,
+            cc: route.cc,
+            bcc: route.bcc,
+            replyTo: email || undefined,
+            subject,
+            text
+        };
+        await transporter.sendMail(mail);
+
+        // Persist minimal submission record
+        try {
+            const rec = {
+                id: uuidv4(),
+                at: new Date().toISOString(),
+                origin,
+                routingKey,
+                to,
+                name,
+                email,
+                phone,
+                subject,
+                ip: (ip||'').toString(),
+                len: (message||'').length
+            };
+            const current = await readJsonSafe(CONTACT_SUBMISSIONS_FILE, []);
+            current.unshift(rec);
+            // Keep last 1000
+            const trimmed = current.slice(0, 1000);
+            await writeJsonSafe(CONTACT_SUBMISSIONS_FILE, trimmed);
+        } catch(_) { /* best-effort */ }
+
+        addLog(`Contact form routed to ${to} (key: ${routingKey || 'default'})`);
+        res.json({ ok: true });
+    } catch (e) {
+        addLog('Contact endpoint error: ' + e.message, 'error');
+        res.status(500).json({ error: 'Failed to send' });
+    }
+});
+
+// Admin-only: list recent contact submissions
+app.get('/api/contacts/submissions', authenticateToken, checkPermission('contacts:read'), async (req, res) => {
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit || 200)));
+        const list = await readJsonSafe(CONTACT_SUBMISSIONS_FILE, []);
+        return res.json({ submissions: list.slice(0, limit) });
+    } catch (e) {
+        return res.status(500).json({ error: 'Failed to load submissions' });
+    }
 });
 
 // In-memory storage (in production, use a database)
@@ -770,18 +1108,34 @@ app.get('/healthz', (req, res) => {
     res.json({ ok: true, service: 'email-admin', time: new Date().toISOString() });
 });
 
+// Version/build info for quick verification
+app.get('/api/version', (req, res) => {
+    res.json({
+        name: __pkg.name,
+        version: __pkg.version,
+        build: {
+            commit: process.env.BUILD_COMMIT || null,
+            time: process.env.BUILD_TIME || null
+        },
+        env: {
+            node: process.version,
+            nodeEnv: process.env.NODE_ENV || null,
+            port: PORT
+        },
+        uptimeSec: Math.round(process.uptime())
+    });
+});
+
 // API Routes (protected)
 
 // Dashboard stats
 app.get('/api/dashboard/stats', authenticateToken, checkPermission('dashboard:read'), (req, res) => {
     const totalStorage = emailAccounts.reduce((sum, account) => sum + account.storage, 0);
-    const monthlySavings = domains.length * 15; // Estimate $15/month per domain saved
     
     res.json({
         totalDomains: domains.length,
         totalEmails: emailAccounts.length,
-        storageUsed: totalStorage,
-        monthlySavings
+        storageUsed: totalStorage
     });
 });
 
@@ -1121,7 +1475,7 @@ app.post('/api/dns/test', authenticateToken, checkPermission('dns:test'), async 
 // --- Compatibility alias routes for UI fallbacks ---
 app.get('/api/stats', authenticateToken, (req, res) => {
     const totalStorage = emailAccounts.reduce((sum, a) => sum + (a.storage || 0), 0);
-    res.json({ totalDomains: domains.length, totalEmails: emailAccounts.length, storageUsed: totalStorage, monthlySavings: domains.length * 15 });
+    res.json({ totalDomains: domains.length, totalEmails: emailAccounts.length, storageUsed: totalStorage});
 });
 app.get('/api/system/logs', authenticateToken, (req, res) => res.json(systemLogs.slice(0,50)));
 app.get('/api/emails', authenticateToken, (req, res) => res.json(emailAccounts.map(a=>({ email: a.address, lastLogin: a.lastLogin, role: 'User' }))));

@@ -10,6 +10,12 @@ RUN npm install --omit=dev --no-audit --no-fund
 # Copy app
 COPY . .
 
+# Optionally set at build time: docker build --build-arg COMMIT=... --build-arg BUILD_TIME=...
+ARG COMMIT
+ARG BUILD_TIME
+ENV BUILD_COMMIT=${COMMIT} \
+    BUILD_TIME=${BUILD_TIME}
+
 ENV NODE_ENV=production \
     PORT=3003
 

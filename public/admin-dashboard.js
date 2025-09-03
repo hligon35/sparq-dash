@@ -456,7 +456,6 @@ async function loadDashboardStats() {
         updateElement('total-domains', stats.totalDomains || 0);
         updateElement('total-emails', stats.totalEmails || 0);
         updateElement('storage-used', `${stats.storageUsed || 0}GB`);
-        updateElement('monthly-savings', `$${stats.monthlySavings || 0}`);
         
     } catch (error) {
         console.error('Error loading dashboard stats:', error);

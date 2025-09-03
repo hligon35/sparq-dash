@@ -163,7 +163,7 @@ app.use(session({
     sameSite: 'lax',
     secure: 'auto',
     // Default to parent domain for cross-subdomain SSO
-    domain: process.env.SESSION_DOMAIN || '.getsparqd.com',
+    domain: process.env.SESSION_DOMAIN || undefined,
     maxAge: 1000 * 60 * 60 * 12
   }
 }));
@@ -266,7 +266,7 @@ app.post('/api/auth/login', async (req, res) => {
                 }
                 const token = Buffer.from(`${username}:${Date.now()}`).toString('base64');
                 try {
-                    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+                    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || undefined;
                     const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
                     const sameSite = 'lax';
                     const ssoSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
@@ -396,7 +396,7 @@ app.get('/api/auth/sso/me', (req, res) => {
 
 // POST /api/auth/sso/logout — clear cross-subdomain cookies and destroy session
 app.post('/api/auth/sso/logout', (req, res) => {
-    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || undefined;
     const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
     const sameSite = 'lax';
     try { res.cookie('sparq_sso', '', { httpOnly: true, secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' }); } catch(_){ }
@@ -948,13 +948,11 @@ async function setupDomainEmail(domainData) {
 // API Routes (protected)
 app.get('/api/dashboard/stats', requireAuth, (req, res) => {
     const totalStorage = emailAccounts.reduce((sum, account) => sum + account.storage, 0);
-    const monthlySavings = domains.length * 15; // Estimate $15/month per domain saved
     
     res.json({
         totalDomains: domains.length,
         totalEmails: emailAccounts.length,
-        storageUsed: totalStorage,
-        monthlySavings
+        storageUsed: totalStorage
     });
 });
 
@@ -1373,8 +1371,7 @@ app.get(['/api/stats', '/api/portal/stats', '/api/metrics/summary'], requireAuth
     const domainsCount = domains.length;
     const emailsCount = emailAccounts.length;
     const storageUsedGB = emailAccounts.reduce((sum, a) => sum + (Number(a.storage) || 0), 0);
-    const monthlySavings = domainsCount * 15; // rough estimate
-    res.json({ domains: domainsCount, emails: emailsCount, storageUsedGB, monthlySavings });
+    res.json({ domains: domainsCount, emails: emailsCount, storageUsedGB });
 });
 
 // Storage summary

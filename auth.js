@@ -120,8 +120,8 @@ router.post('/login', async (req, res) => {
         };
         // Also issue parent-domain SSO cookies for cross-subdomain auth
         try {
-            const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
-            const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+            const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || undefined;
+            const secure = 'auto';
             const sameSite = 'lax';
             const ssoSecret = process.env.SSO_JWT_SECRET || process.env.JWT_SECRET || 'email-admin-secret';
             const ssoTtl = Number(process.env.SSO_ACCESS_TTL_SEC || 60 * 60); // 1h default
@@ -280,8 +280,8 @@ function issueSsoCookies(res, user, opts = {}) {
         name: user.name
     };
     const token = jwt.sign(payload, jwtSecret, { expiresIn: maxAgeSeconds });
-    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
-    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || undefined;
+    const secure = 'auto';
     const sameSite = 'lax';
     // Set main SSO cookie (httpOnly)
     res.cookie?.('sparq_sso', token, {
@@ -351,8 +351,8 @@ router.get('/sso/me', (req, res) => {
 
 // POST /api/auth/sso/logout — clear cookies (and session if present)
 router.post('/sso/logout', (req, res) => {
-    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || '.getsparqd.com';
-    const secure = process.env.NODE_ENV === 'production' ? true : 'auto';
+    const domain = process.env.SSO_COOKIE_DOMAIN || process.env.SESSION_DOMAIN || undefined;
+    const secure = 'auto';
     const sameSite = 'lax';
     // Clear cookies by setting empty value and immediate expiry
     res.cookie?.('sparq_sso', '', { httpOnly: true, secure, sameSite, domain, maxAge: 0, expires: new Date(0), path: '/' });
