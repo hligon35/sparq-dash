@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Create Domain Accounts</title>
+	<script src="/portal/base-path.js"></script>
+	<link rel="stylesheet" href="/portal/sparq-colors.css" />
+	<style>
+		:root {
+			--card-bg: #fff;
+			--card-border: #e9ecef;
+			--muted: #6c757d;
+			--text: #222;
+			--radius: 12px;
+		}
+		body { font-family: Segoe UI, Tahoma, sans-serif; background: #f5f7fb; color: var(--text); }
+		.container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+		.page-title { font-size: 1.6rem; font-weight: 800; margin: 8px 0 16px; }
+		.card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.04); padding: 16px; margin-bottom: 16px; }
+		.row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+		.col-12 { grid-column: span 12; }
+		.col-6 { grid-column: span 6; }
+		.col-4 { grid-column: span 4; }
+		.col-3 { grid-column: span 3; }
+		.col-2 { grid-column: span 2; }
+		.field label { display: block; font-size: .9rem; font-weight: 700; margin-bottom: 6px; }
+		.field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 10px; }
+		.muted { color: var(--muted); }
+		.btn { background: #1a7ad9; color: #fff; border: none; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 700; }
+		.btn:hover { filter: brightness(.97); }
+		.btn-secondary { background: #6c757d; }
+		.btn-danger { background: #e03131; }
+		.btn-outline { background: #fff; color: #1a7ad9; border: 1px solid #1a7ad9; }
+		.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+		.table { width: 100%; border-collapse: collapse; }
+		.table th, .table td { border-bottom: 1px solid #f1f3f5; padding: 8px; text-align: left; }
+		.table th { background: #f8fafc; }
+		.actions { display: flex; gap: 8px; align-items: center; }
+		.error { color: #c92a2a; font-size: .85rem; }
+		.chip { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #eff6ff; color: #1a7ad9; font-weight: 700; font-size: .8rem; }
+		.progress { height: 10px; background: #f1f3f5; border-radius: 999px; overflow: hidden; }
+		.progress .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #1a7ad9, #3aa0ff); transition: width .3s ease; }
+		.status { margin-top: 8px; font-size: .92rem; color: #333; }
+		.row-error { outline: 2px solid #ffe3e3; background: #fff5f5; }
+		.hint { font-size: .85rem; color: #6c757d; }
+		.settings { display: none; }
+		.settings.open { display: block; }
+		.pill { display: inline-flex; gap: 8px; align-items: center; background: #edf2ff; color: #364fc7; border: 1px solid #dbe4ff; padding: 6px 10px; border-radius: 999px; font-weight: 700; }
+		.th-email { width: 28%; }
+		.th-name { width: 26%; }
+		.th-gb { width: 16%; }
+		.th-role { width: 22%; }
+		.th-actions { width: 8%; }
+		.ml-10 { margin-left: 10px; }
+		.hidden { display: none; }
+		.flex-middle { display: flex; align-items: center; gap: 10px; }
+		.flex-1 { flex: 1 1 auto; }
+		.mt-10 { margin-top: 10px; }
+		@media (max-width: 900px) { .col-6 { grid-column: span 12; } }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="page-title">Create Domain Email Accounts</div>
+
+		<!-- Domain & Controls -->
+		<div class="card">
+			<div class="row">
+				<div class="col-6">
+					<div class="field">
+						<label for="domain">Domain</label>
+						<input id="domain" type="text" placeholder="example.com" aria-describedby="domain-hint" />
+						<div id="domain-hint" class="hint">Pulled from server .env in backend; editable here for preview. Example: melawholefoodsva.com</div>
+					</div>
+				</div>
+				<div class="col-6">
+					<div class="field">
+						<label>Quick actions</label>
+						<div class="toolbar">
+							<button id="add-row" class="btn btn-outline">+ Add Row</button>
+							<button id="add-5" class="btn btn-outline">+5 Rows</button>
+							<button id="clear-all" class="btn btn-secondary">Clear</button>
+							<span class="chip" id="row-count">0 rows</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Accounts Table -->
+		<div class="card">
+			<div class="row">
+				<div class="col-12">
+					<table class="table" aria-label="Email accounts to provision">
+						<thead>
+							<tr>
+							<th class="th-email">Email address</th>
+							<th class="th-name">Full name</th>
+							<th class="th-gb">Storage (GB)</th>
+							<th class="th-role">Role/Department (optional)</th>
+							<th class="th-actions">Actions</th>
+							</tr>
+						</thead>
+						<tbody id="rows"></tbody>
+					</table>
+					<div class="hint">Tip: You can paste multiple lines into the email field; the page will auto-split into rows.</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Submission -->
+		<div class="card">
+			<div class="row">
+				<div class="col-6">
+								<button id="provision" class="btn">Provision Accounts</button>
+								<span id="validation-msg" class="error ml-10 hidden"></span>
+				</div>
+							<div class="col-6 flex-middle">
+								<div class="progress flex-1">
+						<div id="progress-fill" class="fill"></div>
+					</div>
+					<div id="status" class="status" aria-live="polite">Idle</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Advanced/Settings (client-side only preview) -->
+		<div class="card">
+			<div class="row">
+				<div class="col-12">
+					<button id="toggle-settings" class="pill" aria-expanded="false" aria-controls="settings">
+						⚙️ Provisioning Settings (client preview)
+					</button>
+								<div id="settings" class="settings" role="region" aria-label="Provisioning settings">
+									<div class="row mt-10">
+							<div class="col-4">
+								<div class="field">
+									<label for="cfg-endpoint">Server endpoint (optional preview)</label>
+									<input id="cfg-endpoint" type="text" placeholder="/api/provision-email" />
+								</div>
+							</div>
+							<div class="col-4">
+								<div class="field">
+									<label for="cfg-admin">Admin user (preview)</label>
+									<input id="cfg-admin" type="text" placeholder="admin" />
+								</div>
+							</div>
+							<div class="col-4">
+								<div class="field">
+									<label for="cfg-key">Admin key/token (preview)</label>
+									<input id="cfg-key" type="password" placeholder="••••••••" />
+								</div>
+							</div>
+							<div class="col-12">
+								<div class="toolbar">
+									<button id="save-settings" class="btn btn-outline">Save settings (local)</button>
+									<span class="hint">Note: Real values should come from server .env. These client-side fields are only for preview/testing.</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Results -->
+		<div id="results" class="card hidden">
+			<div id="results-body" class="muted"></div>
+		</div>
+	</div>
+
+	<script src="/portal/shared-header-nav.js"></script>
+	<script>
+	(function(){
+		// Config and helpers
+		const BASE = (function(){ try { return window.location.pathname.startsWith('/portal') ? '/portal' : ''; } catch(_) { return ''; } })();
+		const $ = (id) => document.getElementById(id);
+
+		function withBase(path){
+			try {
+				return (typeof window.__withBase__==='function')
+					? window.__withBase__(String(path||'').replace(/^\/+/, ''))
+					: (String(path||'').startsWith('/') ? path : '/' + path);
+			} catch(_) { return (String(path||'').startsWith('/') ? path : '/' + path); }
+		}
+
+		function candidateFetch(paths, init){
+			const cands = [];
+			(paths||[]).forEach(p=>{
+				const clean = p.startsWith('/') ? p : '/' + p;
+				cands.push(clean);
+				if (!clean.startsWith('/portal/')) cands.push('/portal' + clean);
+				try { if (typeof window.__withBase__==='function') cands.push(window.__withBase__(clean.replace(/^\//,''))); } catch(_){ }
+			});
+			let lastErr;
+			return (async ()=>{
+				for (const url of cands){
+					try { const r = await fetch(url, { credentials:'include', headers:{ 'Accept':'application/json', ...(init&&init.headers||{}) }, ...(init||{}) }); if (r.ok) return r; lastErr = new Error('HTTP '+r.status); } catch(e){ lastErr = e; }
+				}
+				throw lastErr || new Error('All candidates failed');
+			})();
+		}
+
+		// UI state
+		const rowsEl = $('rows');
+		const rowCountEl = $('row-count');
+		const progressFill = $('progress-fill');
+		const statusEl = $('status');
+		const validationMsg = $('validation-msg');
+		const results = $('results');
+		const resultsBody = $('results-body');
+
+		const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+		const MIN_GB = 1, MAX_GB = 1024;
+
+		function setProgress(pct, status){
+			progressFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+			if (status) statusEl.textContent = status;
+		}
+
+		function updateRowCount(){
+			const n = rowsEl.querySelectorAll('tr').length;
+			rowCountEl.textContent = n + (n===1 ? ' row' : ' rows');
+		}
+
+		function newRow(data){
+			const tr = document.createElement('tr');
+			tr.innerHTML = `
+				<td><input type="email" placeholder="user@example.com" aria-label="Email address" value="${data?.email||''}" /></td>
+				<td><input type="text" placeholder="Full name" aria-label="Full name" value="${data?.name||''}" /></td>
+				<td><input type="number" min="${MIN_GB}" max="${MAX_GB}" step="1" placeholder="${MIN_GB}-${MAX_GB}" aria-label="Storage in GB" value="${Number.isFinite(data?.gb)? data.gb : 25}" /></td>
+				<td><input type="text" placeholder="Role or department (optional)" aria-label="Role or department" value="${data?.role||''}" /></td>
+				<td class="actions"><button type="button" class="btn btn-danger btn-sm" aria-label="Remove row">✕</button></td>
+			`;
+			const removeBtn = tr.querySelector('button');
+			removeBtn.addEventListener('click', ()=>{ tr.remove(); updateRowCount(); });
+			// Paste multi-line into email cell to auto-split
+			const emailInput = tr.querySelector('td:nth-child(1) input');
+			emailInput.addEventListener('paste', (e)=>{
+				const text = (e.clipboardData || window.clipboardData).getData('text');
+				if (text && text.includes('\n')){
+					e.preventDefault();
+					const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+					if (!lines.length) return;
+					// Put first into current, rest new rows
+					emailInput.value = lines[0];
+					for (let i=1;i<lines.length;i++) addRow({ email: lines[i], gb: 25 });
+					updateRowCount();
+				}
+			});
+			rowsEl.appendChild(tr);
+		}
+
+		function addRow(data){ newRow(data||{}); updateRowCount(); }
+		function addRows(n){ for (let i=0;i<n;i++) addRow(); }
+		function clearRows(){ rowsEl.innerHTML = ''; updateRowCount(); }
+
+		function collect(){
+			const list = [];
+			rowsEl.querySelectorAll('tr').forEach(tr=>{
+				const tds = tr.querySelectorAll('td');
+				const email = String(tds[0].querySelector('input').value||'').trim();
+				const name  = String(tds[1].querySelector('input').value||'').trim();
+				const gb    = Number(tds[2].querySelector('input').value||0);
+				const role  = String(tds[3].querySelector('input').value||'').trim();
+				list.push({ email, name, gb, role });
+			});
+			return list;
+		}
+
+		function validate(list){
+			// Clear prior marks
+			rowsEl.querySelectorAll('tr').forEach(tr=> tr.classList.remove('row-error'));
+			validationMsg.style.display = 'none';
+			const errors = [];
+			const seen = new Set();
+			list.forEach((r, idx)=>{
+				const tr = rowsEl.querySelectorAll('tr')[idx];
+				const issues = [];
+				if (!emailRe.test(r.email)) issues.push('bad email');
+				if (!r.name) issues.push('name required');
+				if (!Number.isFinite(r.gb) || r.gb < MIN_GB || r.gb > MAX_GB) issues.push('storage out of range');
+				if (seen.has(r.email.toLowerCase())) issues.push('duplicate email');
+				if (issues.length){
+					errors.push({ idx, issues });
+					if (tr) tr.classList.add('row-error');
+				} else {
+					seen.add(r.email.toLowerCase());
+				}
+			});
+			return { ok: errors.length===0, errors };
+		}
+
+		function setStatus(text){ statusEl.textContent = text; }
+		function showResults(html){ results.style.display = 'block'; resultsBody.innerHTML = html; }
+
+		function loadLocalConfig(){
+			try {
+				const raw = localStorage.getItem('onboardConfig');
+				return raw ? JSON.parse(raw) : {};
+			} catch(_) { return {}; }
+		}
+		function saveLocalConfig(cfg){
+			try { localStorage.setItem('onboardConfig', JSON.stringify(cfg||{})); } catch(_){ }
+		}
+
+		// Wire controls
+		$('add-row').addEventListener('click', ()=> addRow());
+		$('add-5').addEventListener('click', ()=> addRows(5));
+		$('clear-all').addEventListener('click', ()=> clearRows());
+		$('toggle-settings').addEventListener('click', ()=>{
+			const p = $('settings'); const btn = $('toggle-settings');
+			const open = !p.classList.contains('open');
+			p.classList.toggle('open', open);
+			btn.setAttribute('aria-expanded', String(open));
+		});
+		$('save-settings').addEventListener('click', ()=>{
+			const cfg = {
+				endpoint: $('cfg-endpoint').value.trim() || '/api/provision-email',
+				admin: $('cfg-admin').value.trim(),
+				key: $('cfg-key').value
+			};
+			saveLocalConfig(cfg);
+			showResults(`<div>Saved local preview settings. Endpoint: <code>${cfg.endpoint}</code></div>`);
+		});
+
+		// Submit handler
+		$('provision').addEventListener('click', async ()=>{
+			const domain = ($('domain').value||'').trim();
+			const items = collect();
+			setProgress(10, 'Validating input…');
+
+			if (!domain){
+				validationMsg.textContent = 'Domain is required';
+				validationMsg.style.display = 'inline';
+				setProgress(0, 'Idle');
+				return;
+			}
+			const v = validate(items);
+			if (!v.ok){
+				validationMsg.textContent = 'Please fix highlighted rows';
+				validationMsg.style.display = 'inline';
+				setProgress(0, 'Idle');
+				return;
+			}
+
+			// Build payload per requirements: array of user objects
+			// Note: domain/admin creds/server endpoint should ultimately come from backend .env.
+			const payload = items.map(u => ({
+				email: u.email,
+				name: u.name,
+				gb: u.gb,
+				role: u.role || undefined
+			}));
+
+			// Optional preview settings from local storage (client only)
+			const cfg = loadLocalConfig();
+			const endpoint = (cfg.endpoint && cfg.endpoint.trim()) || '/api/provision-email';
+
+			// Progress UI
+			setProgress(35, 'Preparing request…');
+			results.style.display = 'none';
+			resultsBody.innerHTML = '';
+
+			try {
+				// Send along domain as a header to reflect .env-backed value on server side
+				// Server should read DOMAIN_NAME from process.env and prefer that over this hint.
+				setProgress(65, 'Submitting payload…');
+				const r = await candidateFetch([endpoint], {
+					method: 'POST',
+					headers: { 'Content-Type':'application/json', 'X-Provision-Domain': domain },
+					body: JSON.stringify(payload)
+				});
+				setProgress(80, 'Awaiting response…');
+				const body = await r.json().catch(()=>({}));
+				if (r.ok) {
+					setProgress(100, 'Provisioning queued');
+					showResults(`<div><strong>Request accepted.</strong><br>Accounts: ${payload.length}<br><pre style="white-space:pre-wrap">${JSON.stringify(body, null, 2)}</pre></div>`);
+				} else {
+					setProgress(0, 'Failed');
+					showResults(`<div class="error">Server error (${r.status}).<br><pre style="white-space:pre-wrap">${(body && (body.error||body.message)) || ''}</pre></div>`);
+				}
+			} catch (e) {
+				// Common case during prep: endpoint not implemented yet (404 across candidates)
+				setProgress(0, 'Endpoint not available');
+				showResults(`
+					<div class="error">Provisioning endpoint not available.</div>
+					<div class="hint" style="margin-top:8px;">Add a POST route on the server at <code>/api/provision-email</code> that logs the payload and returns JSON.<br>
+					Example (Express):</div>
+					<pre class="hint" style="white-space:pre-wrap; background:#f8f9fa; padding:10px; border-radius:8px; border:1px solid #eef1f4;">
+// In server.js (backend):
+// app.post('/api/provision-email', express.json(), (req, res) => {
+//   const domain = process.env.DOMAIN_NAME || req.get('X-Provision-Domain') || '(unspecified)';
+//   const items = Array.isArray(req.body) ? req.body : [];
+//   console.log('[provision-email]', { domain, count: items.length, sample: items[0] });
+//   // TODO: integrate with real provisioning logic (Postfix/Dovecot, storage allocation, etc.)
+//   return res.json({ ok: true, domain, received: items.length });
+// });
+					</pre>
+				`);
+			}
+		});
+
+		// Initial setup: try to hydrate domain from local preview config (client only)
+		(function init(){
+			const cfg = loadLocalConfig();
+			$('cfg-endpoint').value = cfg.endpoint || '/api/provision-email';
+			$('cfg-admin').value = cfg.admin || '';
+			$('cfg-key').value = cfg.key || '';
+			// If backend exposes a config later, we could fetch it here.
+			// For now, keep a sensible default.
+			$('domain').value = cfg.domain || '';
+			if (!rowsEl.querySelector('tr')) addRows(3);
+			setProgress(0, 'Idle');
+		})();
+	})();
+	</script>
+</body>
+</html>
+
