@@ -50,7 +50,7 @@ app.use('/portal', express.static(path.join(__dirname, 'public')));
 
 // Middleware
 // Merge global CORS allowlist with contact-routing allowOrigins
-let corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3003,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
+let corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3003,http://localhost:5500,http://127.0.0.1:5500,https://getsparqd.com,https://www.getsparqd.com,https://portal.getsparqd.com,https://sparqplug.getsparqd.com')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);

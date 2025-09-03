@@ -18,7 +18,7 @@
     }
 
     // Style block mirroring index.html header/nav look
-    const css = `
+  const css = `
 :root { --primary-orange:#f59c28; --secondary-orange:#f7b626; --primary-blue:#1a78d8; --secondary-blue:#1a78d8; --white:#fff; --off-white:#f8f9fa; --light-gray:#e9ecef; --dark-gray:#343a40; }
 /* Hide legacy header overlay user info injected by admin-dashboard.js */
 .header .user-info { display:none !important; }
@@ -26,12 +26,13 @@
 .header { position:relative; }
 .shared-header h1 { font-size: 2.0em; margin-bottom: 6px; }
 .shared-header p { opacity:.9; }
-.top-nav { display:flex; gap:8px; padding:14px 18px; background:#fff; border-bottom:1px solid var(--light-gray); align-items:center; flex-wrap:wrap; overflow-x:auto; -webkit-overflow-scrolling:touch; justify-content:center; }
-.top-nav .nav-item { display:inline-flex; align-items:center; width:auto; padding:10px 14px; margin:6px 4px; font-size:.98em; white-space:nowrap; scroll-snap-align:start; text-align:center; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#333; position:relative; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:color .2s, background .2s, border-color .2s, transform .15s; text-decoration:none; }
-.top-nav .nav-item:hover { background:#f8fafc; border-color:#cbd5e1; color:#111; transform: translateY(-1px); box-shadow:0 2px 4px rgba(0,0,0,.06); }
-.top-nav .nav-item.active { background:#eff6ff; color:var(--primary-blue); border-color:var(--primary-blue); box-shadow:0 2px 6px rgba(26,120,216,.12); }
-.top-nav .nav-item::before { content:''; display:inline-block; width:8px; height:8px; border-radius:999px; background:#cbd5e1; margin-right:8px; box-shadow:0 0 0 2px #fff; }
-.top-nav .nav-item.active::before { background:var(--primary-blue); box-shadow:0 0 0 2px #eff6ff; }
+/* Scope nav styles to the injected shared nav only so we don't override page-defined .top-nav */
+.shared-nav { display:flex; gap:8px; padding:14px 18px; background:#fff; border-bottom:1px solid var(--light-gray); align-items:center; flex-wrap:wrap; overflow-x:auto; -webkit-overflow-scrolling:touch; justify-content:center; }
+.shared-nav .nav-item { display:inline-flex; align-items:center; width:auto; padding:10px 14px; margin:6px 4px; font-size:.98em; white-space:nowrap; scroll-snap-align:start; text-align:center; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#333; position:relative; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:color .2s, background .2s, border-color .2s, transform .15s; text-decoration:none; }
+.shared-nav .nav-item:hover { background:#f8fafc; border-color:#cbd5e1; color:#111; transform: translateY(-1px); box-shadow:0 2px 4px rgba(0,0,0,.06); }
+.shared-nav .nav-item.active { background:#eff6ff; color:var(--primary-blue); border-color:var(--primary-blue); box-shadow:0 2px 6px rgba(26,120,216,.12); }
+.shared-nav .nav-item::before { content:''; display:inline-block; width:8px; height:8px; border-radius:999px; background:#cbd5e1; margin-right:8px; box-shadow:0 0 0 2px #fff; }
+.shared-nav .nav-item.active::before { background:var(--primary-blue); box-shadow:0 0 0 2px #eff6ff; }
 /* Userbar made ~25% more compact and aligned with header title */
 .userbar { display:flex; flex-direction:column; align-items:center; gap:4px; position:absolute; top:18px; right:14px; padding:0; background:transparent; border:none; z-index:1000; }
 .userbar .user-pill { display:inline-flex; align-items:center; gap:8px; padding:4px 9px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; color:#111; box-shadow:0 2px 8px rgba(0,0,0,.10); font-size:11px; }
@@ -57,8 +58,9 @@ body > .userbar { position:fixed; top:8px; right:14px; }
         const header = document.createElement('div');
         header.className = 'shared-header';
         header.innerHTML = '<h1>Sparq Dashboard</h1><p>Account Management</p>';
-        const nav = document.createElement('div');
-        nav.className = 'top-nav';
+  const nav = document.createElement('div');
+  // Use a unique class so styles apply only to injected nav
+  nav.className = 'shared-nav';
         const items = [
           ['Dashboard','dashboard'],
           ['Create Domain Email','create-domain'],

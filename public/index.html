@@ -49,11 +49,11 @@
         </div>
         <div class="top-nav">
             <button class="nav-item active" data-target="dashboard">Dashboard</button>
-            <button class="nav-item" data-target="create-domain">Create Domain Email</button>
-            <button class="nav-item" data-target="manage-emails">Manage Emails</button>
-            <button class="nav-item" data-target="storage">Storage</button>
-            <button class="nav-item" data-target="dns-manager">DNS Manager</button>
-            <button class="nav-item" data-target="client-portal">Client Portal</button>
+            <button class="nav-item" data-target="create-domain" data-href="/create-domain.html">Create Domain Email</button>
+            <button class="nav-item" data-target="manage-emails" data-href="/email-manager.html">Manage Emails</button>
+            <button class="nav-item" data-target="storage" data-action="open-storage">Storage</button>
+            <button class="nav-item" data-target="dns-manager" data-href="/dns-manager.html">DNS Manager</button>
+            <button class="nav-item" data-target="client-portal" data-href="/login.html">Client Portal</button>
             <button class="nav-item" data-target="system-logs">Debug Panel</button>
             <button class="nav-item" data-target="contacts">Contact Submissions</button>
             <button class="nav-item" data-target="settings">Settings</button>
@@ -192,6 +192,34 @@
             btn.addEventListener('click', (e)=>{
                 e.preventDefault();
                 const id = btn.getAttribute('data-target');
+                const href = btn.getAttribute('data-href');
+                const action = btn.getAttribute('data-action');
+
+                // External navigation to standalone pages
+                if (href) {
+                    try {
+                        const url = (typeof window.__withBase__==='function')
+                            ? window.__withBase__(href.replace(/^\//,''))
+                            : href;
+                        window.location.href = url;
+                        return;
+                    } catch(_) {
+                        window.location.href = href;
+                        return;
+                    }
+                }
+
+                // Special actions (e.g., open storage panel)
+                if (action === 'open-storage') {
+                    try { window.StorageManager && window.StorageManager.open(); } catch(_) {}
+                    // Keep dashboard selected visually
+                    document.querySelectorAll('.top-nav .nav-item').forEach(b=>b.classList.remove('active'));
+                    btn.classList.add('active');
+                    try { history.replaceState(null, '', '#'+id); } catch(_){ }
+                    return;
+                }
+
+                // Default: switch sections in-page
                 document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
                 document.getElementById(id)?.classList.add('active');
                 document.querySelectorAll('.top-nav .nav-item').forEach(b=>b.classList.remove('active'));
